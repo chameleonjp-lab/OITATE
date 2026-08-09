@@ -688,12 +688,14 @@ function enteredPenWithInwardMotion(
   const displacementX = animal.x - animal.previousX;
   const displacementZ = animal.z - animal.previousZ;
   if (magnitude(displacementX, displacementZ) < GEOMETRY_EPSILON) return false;
-  const displacement = normalized(displacementX, displacementZ);
   const inward = normalized(
     pen.centerX - animal.previousX,
     pen.centerZ - animal.previousZ,
   );
-  return displacement.x * inward.x + displacement.z * inward.z > 0.08;
+  // The contract requires positive actual inward movement. A shallow, valid
+  // sweep must not be rejected by an arbitrary normalized-direction cutoff.
+  const inwardDot = displacementX * inward.x + displacementZ * inward.z;
+  return inwardDot > GEOMETRY_EPSILON;
 }
 
 /**
@@ -812,10 +814,12 @@ function updateAnimal(
       : "guidance";
     if (animal.pressureBand === "urgent") animal.fleeTriggerBand = "urgent";
     let away = { x: animal.escapeX, z: animal.escapeZ };
-    if (activePressure) {
+    if (seeingPlayer) {
       away = normalized(animal.x - player.x, animal.z - player.z);
       animal.escapeX = away.x;
       animal.escapeZ = away.z;
+    }
+    if (activePressure) {
       animal.pressureReleaseSeconds = 0;
     } else if (animal.fleeTriggerBand === "urgent") {
       animal.pressureReleaseSeconds += deltaSeconds;
