@@ -146,22 +146,30 @@ test("replays completion through the P2-only hook and retries to a clean state",
   expect(reset.p2.animals.every((animal) => !animal.fullBodyInside)).toBe(true);
 });
 
-test("keeps a single entrance reservation when three candidates arrive together", async ({ page }) => {
+test("keeps one entrance reservation while a non-overlapping three-animal queue waits", async ({ page }) => {
   await page.goto("/?p2-e2e=1");
   await expect(page.locator("#app")).toHaveAttribute("data-ready", "true");
 
   const probe = await page.evaluate(() => {
     const hook = window.__OITATE_P2__?.e2e;
     if (!hook) throw new Error("P2 E2E hook is not available");
-    return hook.probeEntranceReservation();
+    return hook.probeEntranceQueue();
   });
   expect(probe.decisionStepSeconds).toBe(0.05);
   expect(probe.initialCandidates).toHaveLength(3);
   expect(probe.initialCandidates.every((candidate) =>
     Math.abs(candidate.x) < probe.entranceClearance
       && candidate.z > probe.outerFaceZ
-      && candidate.z - probe.outerFaceZ < 0.05,
+      && candidate.z - probe.outerFaceZ > 0.01,
   )).toBe(true);
+  for (let index = 0; index < probe.initialCandidates.length - 1; index += 1) {
+    const first = probe.initialCandidates[index];
+    const second = probe.initialCandidates[index + 1];
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+    expect(Math.hypot((first?.x ?? 0) - (second?.x ?? 0), (first?.z ?? 0) - (second?.z ?? 0)))
+      .toBeGreaterThanOrEqual(probe.minimumAnimalSeparation - 1e-6);
+  }
   expect(probe.initialCandidates.map((candidate) => candidate.id))
     .toEqual(["coward-1", "coward-2", "coward-3"]);
   expect(probe.firstStepReservedAnimalId).toBeTruthy();
@@ -175,8 +183,17 @@ test("keeps a single entrance reservation when three candidates arrive together"
   );
   expect(firstStepFollowers).toHaveLength(2);
   expect(firstStepFollowers.every((animal) =>
-    animal.phase !== "enteringPen" && animal.z >= probe.outerFaceZ,
+    animal.phase === "fleeing" && animal.z >= probe.outerFaceZ,
   )).toBe(true);
+  for (let firstIndex = 0; firstIndex < probe.firstStepAnimals.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < probe.firstStepAnimals.length; secondIndex += 1) {
+      const first = probe.firstStepAnimals[firstIndex];
+      const second = probe.firstStepAnimals[secondIndex];
+      if (!first || !second) throw new Error("missing entrance queue fixture animal");
+      expect(Math.hypot(second.x - first.x, second.z - first.z))
+        .toBeGreaterThanOrEqual(probe.minimumAnimalSeparation - 1e-6);
+    }
+  }
   expect(probe.reservedAnimalId).toBeTruthy();
   expect(probe.reservedAnimalId).toBe(probe.firstStepReservedAnimalId);
   expect(probe.enteringAnimalIds).toEqual([probe.reservedAnimalId]);
