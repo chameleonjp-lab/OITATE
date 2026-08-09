@@ -100,6 +100,79 @@ describe("P2 cowardly animal prototype", () => {
     expect(state.capturedCount).toBe(1);
   });
 
+  it("accepts a positive sub-threshold inward sweep and captures after the hold", () => {
+    const state = createP2Simulation();
+    const animal = state.animals[0];
+    if (!animal) throw new Error("missing test animal");
+    for (const other of state.animals.slice(1)) other.phase = "captured";
+
+    const innerFaceZ = state.pen.entranceZ - state.pen.animalRadius;
+    const inwardZ = 0.05;
+    const inwardX = Math.sqrt(1 - inwardZ * inwardZ);
+    animal.x = state.pen.centerX;
+    animal.z = innerFaceZ + 0.002;
+    animal.previousX = animal.x;
+    animal.previousZ = animal.z;
+    animal.phase = "fleeing";
+    animal.pressureBand = "guidance";
+    animal.fleeTriggerBand = "guidance";
+    state.penReservedAnimalId = animal.id;
+
+    const player = {
+      x: animal.x - inwardX * 2.4,
+      z: animal.z + inwardZ * 2.4,
+      isRunning: false,
+    };
+    const previous = { x: animal.x, z: animal.z };
+    stepP2Simulation(state, player, 0.05);
+
+    const displacementX = animal.x - previous.x;
+    const displacementZ = animal.z - previous.z;
+    const inwardDot = -displacementZ;
+    expect(displacementX).toBeGreaterThan(0);
+    expect(inwardDot).toBeGreaterThan(0);
+    expect(inwardDot).toBeLessThan(0.08);
+    expect(animal.phase).toBe("enteringPen");
+    expect(animal.fullBodyInside).toBe(true);
+
+    for (let holdStep = 0; holdStep < 6; holdStep += 1) {
+      stepP2Simulation(state, player, 0.05);
+      expect(animal.phase).toBe("enteringPen");
+    }
+    stepP2Simulation(state, player, 0.05);
+    expect(animal.phase).toBe("captured");
+    expect(animal.fullBodyInside).toBe(true);
+  });
+
+  it("retains a throat crossing owner until the full-body edge crosses on a later tick", () => {
+    const state = createP2Simulation();
+    const animal = state.animals[0];
+    if (!animal) throw new Error("missing test animal");
+    for (const other of state.animals.slice(1)) other.phase = "captured";
+
+    const outerFaceZ = state.pen.entranceZ + state.pen.animalRadius;
+    const innerFaceZ = state.pen.entranceZ - state.pen.animalRadius;
+    animal.x = state.pen.centerX;
+    animal.z = outerFaceZ + 0.02;
+    animal.previousX = animal.x;
+    animal.previousZ = animal.z;
+    animal.phase = "fleeing";
+    animal.pressureBand = "guidance";
+    animal.fleeTriggerBand = "guidance";
+
+    stepP2Simulation(state, { x: animal.x, z: animal.z + 3, isRunning: false }, 0.05);
+    expect(state.penReservedAnimalId).toBe(animal.id);
+    expect(animal.phase).toBe("fleeing");
+    expect(animal.z).toBeLessThan(outerFaceZ);
+    expect(animal.z).toBeGreaterThan(innerFaceZ);
+
+    for (let tick = 0; tick < 60 && animal.phase === "fleeing"; tick += 1) {
+      stepP2Simulation(state, { x: animal.x, z: animal.z + 3, isRunning: false }, 0.05);
+    }
+    expect(state.penReservedAnimalId).toBe(animal.id);
+    expect(animal.phase).toBe("enteringPen");
+  });
+
   it("finishes only after all three are captured and keeps entrance ownership stable", () => {
     const state = createP2Simulation();
     const first = state.animals[0];
@@ -424,6 +497,71 @@ describe("P2 cowardly animal prototype", () => {
     expect(animal.z).toBeCloseTo(0);
   });
 
+  it("updates a guidance flee direction through attention while the player circles at a reachable speed", () => {
+    const state = createP2Simulation();
+    const animal = state.animals[0];
+    if (!animal) throw new Error("missing test animal");
+    for (const other of state.animals.slice(1)) other.phase = "captured";
+    animal.x = 8;
+    animal.z = 8;
+    animal.phase = "fleeing";
+    animal.pressureBand = "guidance";
+    animal.fleeTriggerBand = "guidance";
+
+    const deltaSeconds = 0.1;
+    const radius = 4.6;
+    let player = { x: animal.x, z: animal.z + radius };
+    const initialDistance = Math.hypot(animal.x - player.x, animal.z - player.z);
+    let previousDistance = initialDistance;
+
+    for (let tick = 0; tick <= 160; tick += 1) {
+      const angle = Math.PI / 2 - (Math.PI * tick) / 160;
+      const target = {
+        x: animal.x + radius * Math.cos(angle),
+        z: animal.z + radius * Math.sin(angle),
+      };
+      const targetDeltaX = target.x - player.x;
+      const targetDeltaZ = target.z - player.z;
+      const targetDistance = Math.hypot(targetDeltaX, targetDeltaZ);
+      const maxPlayerStep = 2.2 * deltaSeconds;
+      const playerStep = Math.min(maxPlayerStep, targetDistance);
+      player = targetDistance > 1e-8
+        ? {
+          x: player.x + targetDeltaX / targetDistance * playerStep,
+          z: player.z + targetDeltaZ / targetDistance * playerStep,
+        }
+        : player;
+      const before = { x: animal.x, z: animal.z };
+      const expectedAwayLength = Math.hypot(before.x - player.x, before.z - player.z);
+      const expectedAwayX = (before.x - player.x) / expectedAwayLength;
+      const expectedAwayZ = (before.z - player.z) / expectedAwayLength;
+      stepP2Simulation(state, {
+        ...player,
+        speed: playerStep / deltaSeconds,
+        isRunning: false,
+      }, deltaSeconds);
+
+      expect(animal.phase).toBe("fleeing");
+      expect(animal.escapeX).toBeCloseTo(expectedAwayX, 6);
+      expect(animal.escapeZ).toBeCloseTo(expectedAwayZ, 6);
+      const displacementX = animal.x - before.x;
+      const displacementZ = animal.z - before.z;
+      const awayLength = Math.hypot(animal.x - player.x, animal.z - player.z);
+      const awayX = (animal.x - player.x) / awayLength;
+      const awayZ = (animal.z - player.z) / awayLength;
+      expect(displacementX * awayX + displacementZ * awayZ).toBeGreaterThanOrEqual(-1e-8);
+
+      const currentDistance = awayLength;
+      expect(currentDistance).toBeGreaterThanOrEqual(previousDistance - 0.02);
+      previousDistance = currentDistance;
+    }
+
+    expect(player.z).toBeLessThan(animal.z);
+    expect(previousDistance).toBeGreaterThanOrEqual(initialDistance - 0.02);
+    expect(previousDistance).toBeLessThanOrEqual(5.5);
+    expect(animal.pressureBand).toBe("attention");
+  });
+
   it("uses distinct guidance and urgent flee release rules", () => {
     const guidanceState = createP2Simulation();
     const guidanceAnimal = guidanceState.animals[0];
@@ -475,6 +613,26 @@ describe("P2 cowardly animal prototype", () => {
     expect(state.penReservedAnimalId).toBe(first.id);
     expect(second.z).toBeGreaterThanOrEqual(frontOutsideZ);
     expect(second.fullBodyInside).toBe(false);
+  });
+
+  it("arbitrates three same-tick synthetic candidates by stable id in reverse order", () => {
+    const run = (reverse: boolean): string | null => {
+      const state = createP2Simulation();
+      const outerFaceZ = state.pen.entranceZ + state.pen.animalRadius;
+      for (const animal of state.animals) {
+        animal.x = state.pen.centerX;
+        animal.z = outerFaceZ + 0.02;
+        animal.phase = "fleeing";
+        animal.pressureBand = "guidance";
+        animal.fleeTriggerBand = "guidance";
+      }
+      if (reverse) state.animals.reverse();
+      stepP2Simulation(state, { x: state.pen.centerX, z: 0, isRunning: false }, 0.05);
+      return state.penReservedAnimalId;
+    };
+
+    expect(run(false)).toBe("coward-1");
+    expect(run(true)).toBe("coward-1");
   });
 
   it("rechecks a spacing displacement at the entrance and forbids unowned active entry", () => {
@@ -663,9 +821,12 @@ describe("P2 cowardly animal prototype", () => {
 
   it("can guide all three animals through the single entrance using only player position", () => {
     const state = createP2Simulation();
+    const targetOrder = [0, 2, 1];
 
     for (let tick = 0; tick < 1_200 && !state.completed; tick += 1) {
-      const target = state.animals.find((animal) => animal.phase !== "captured");
+      const target = targetOrder
+        .map((index) => state.animals[index])
+        .find((animal) => animal?.phase !== "captured");
       if (!target) break;
       const outsideOffset = target.x < -0.35 ? -1 : target.x > 0.35 ? 1 : 0;
       stepP2Simulation(
@@ -694,12 +855,15 @@ describe("P2 cowardly animal prototype", () => {
 
   it("completes the independent 20Hz constrained-player reproduction within 90 seconds", () => {
     const state = createP2Simulation();
+    const targetOrder = [0, 2, 1];
     let player = { x: 0, z: 4.5 };
     const tickSeconds = 0.05;
     const maximumPlayerStep = 0.11;
 
     for (let tick = 0; tick < 90 / tickSeconds && !state.completed; tick += 1) {
-      const target = state.animals.find((animal) => animal.phase !== "captured");
+      const target = targetOrder
+        .map((index) => state.animals[index])
+        .find((animal) => animal?.phase !== "captured");
       if (!target) break;
       const desired = {
         x: target.x + (target.x < -0.35 ? -1 : target.x > 0.35 ? 1 : 0),
