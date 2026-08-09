@@ -596,6 +596,38 @@ describe("P2 cowardly animal prototype", () => {
     expect(state.capturedCount).toBe(1);
   });
 
+  it("freezes every captured-animal field on a positive-delta update", () => {
+    const state = createP2Simulation();
+    const captured = state.animals[0];
+    if (!captured) throw new Error("missing captured animal");
+    captured.phase = "captured";
+    captured.x = state.pen.centerX - 0.6;
+    captured.z = state.pen.centerZ;
+    captured.previousX = captured.x - 0.25;
+    captured.previousZ = captured.z + 0.25;
+    captured.phaseSeconds = 7.25;
+    captured.captureHoldSeconds = 0.9;
+    captured.fullBodyInside = true;
+    captured.escapeX = 0.75;
+    captured.escapeZ = -0.66;
+    captured.lastMoveX = 0.4;
+    captured.lastMoveZ = -0.9;
+    captured.pressureReleaseSeconds = 0.8;
+    captured.pressureBand = "urgent";
+    captured.fleeTriggerBand = "urgent";
+    const before = structuredClone(captured);
+
+    stepP2Simulation(
+      state,
+      { x: captured.x, z: captured.z, speed: 4, isRunning: true },
+      0.25,
+    );
+
+    expect(captured).toEqual(before);
+    expect(state.capturedCount).toBe(1);
+    expect(state.completed).toBe(false);
+  });
+
   it("treats every non-positive or non-finite delta as a complete state no-op", () => {
     const state = createP2Simulation();
     const owner = state.animals[0];

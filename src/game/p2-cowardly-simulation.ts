@@ -754,6 +754,12 @@ function updateAnimal(
   deltaSeconds: number,
   entranceOpen: boolean,
 ): AnimalUpdateResult {
+  // Captured animals are removed from all external judgment and navigation.
+  // Do not even sanitize their coordinates or refresh pressure bookkeeping:
+  // their complete logical record is frozen until a new simulation is made.
+  if (animal.phase === "captured") {
+    return { newlyCaptured: false, crossedEntranceThroat: false };
+  }
   animal.x = finiteOr(animal.x, pen.centerX);
   animal.z = finiteOr(animal.z, pen.centerZ);
   clampAnimalToWorld(animal, pen);
@@ -765,10 +771,6 @@ function updateAnimal(
     ? Number.POSITIVE_INFINITY
     : effectivePressureDistance(player, distance);
   animal.pressureBand = hystereticPressureBand(animal.pressureBand, effectiveDistance);
-
-  if (animal.phase === "captured") {
-    return { newlyCaptured: false, crossedEntranceThroat: false };
-  }
 
   const seeingPlayer = animal.pressureBand !== "none";
   const activePressure = animal.pressureBand === "guidance"
