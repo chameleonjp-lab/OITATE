@@ -124,10 +124,17 @@ test("replays completion through the P2-only hook and retries to a clean state",
   expect(completed.p2.animals.every((animal) => animal.phase === "captured")).toBe(true);
   expect(completed.p2.animals.every((animal) => animal.fullBodyInside)).toBe(true);
 
-  await page.getByRole("button", { name: "もう一度試す" }).click();
+  const resetAtClick = await page.getByRole("button", { name: "もう一度試す" }).evaluate((element) => {
+    // Use the real retry button handler, then snapshot before the next rAF/20Hz task can run.
+    if (!(element instanceof HTMLButtonElement)) {
+      throw new Error("P2 retry locator did not resolve to a button");
+    }
+    element.click();
+    return window.__OITATE_P1__.getState();
+  });
   await expect(page.locator("#p2-complete-overlay")).toBeHidden();
   await expect(page.locator("#p2-count-text")).toHaveText("収容 0 / 3");
-  const reset = await getP1State(page);
+  const reset = resetAtClick;
   expect(reset.player).toEqual({ x: 0, z: 4.5, speed: 0 });
   expect(reset.p2.animals.map((animal) => ({ id: animal.id, x: animal.x, z: animal.z })))
     .toEqual(initialAnimalPositions);
