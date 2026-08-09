@@ -14,6 +14,7 @@ import {
 import {
   constrainCircleAgainstPenRails,
   createP2Simulation,
+  P2_TUNING,
   stepP2Simulation,
   type CowardAnimalState,
   type P2SimulationState,
@@ -50,10 +51,11 @@ interface P1State {
   };
 }
 
-interface P2EntranceReservationProbe {
+interface P2EntranceQueueProbe {
   /** Fixed fixture evidence for the body-aware entrance sweep. */
   entranceClearance: number;
   outerFaceZ: number;
+  minimumAnimalSeparation: number;
   decisionStepSeconds: number;
   initialCandidates: Array<{ id: string; x: number; z: number }>;
   firstStepReservedAnimalId: string | null;
@@ -70,7 +72,7 @@ interface P2EntranceReservationProbe {
 
 interface P2E2ETestHooks {
   runCompletionReplay: () => void;
-  probeEntranceReservation: () => P2EntranceReservationProbe;
+  probeEntranceQueue: () => P2EntranceQueueProbe;
 }
 
 interface P2PublicApi {
@@ -203,7 +205,7 @@ const p2RetryButton = required<HTMLButtonElement>("[data-action='p2-retry']");
 const signalControls = required<HTMLElement>(".signal-controls");
 const query = new URLSearchParams(window.location.search);
 const p1ProbeEnabled = query.get("p1-probe") === "1";
-const p2E2EEnabled = query.get("p2-e2e") === "1";
+const p2E2EEnabled = import.meta.env.DEV && query.get("p2-e2e") === "1";
 const debugEnabled = p1ProbeEnabled || query.get("debug") === "1";
 signalControls.hidden = !p1ProbeEnabled;
 root.querySelector<HTMLElement>(".p1-eyebrow")?.toggleAttribute("hidden", !p1ProbeEnabled);
@@ -652,16 +654,17 @@ function runP2CompletionReplay(): void {
   }
 }
 
-function probeP2EntranceReservation(): P2EntranceReservationProbe {
+function probeP2EntranceQueue(): P2EntranceQueueProbe {
   prepareP2E2EFixture();
   const entranceClearance = p2Simulation.pen.entranceHalfWidth - p2Simulation.pen.animalRadius;
   const outerFaceZ = p2Simulation.pen.entranceZ + p2Simulation.pen.animalRadius;
+  const queueSpacing = P2_TUNING.minimumAnimalSeparation;
   const candidates = [
-    // All three centers fit the body-aware opening. They start just outside
-    // the outer face so one shared 20Hz production step can self-sweep them.
-    { x: -0.7, z: outerFaceZ + 0.02 },
+    // The queue is deliberately non-overlapping. Only the nearest body is
+    // close enough to self-sweep this tick; both followers remain outside.
+    { x: 0, z: outerFaceZ + queueSpacing * 2 + 0.02 },
+    { x: 0, z: outerFaceZ + queueSpacing + 0.02 },
     { x: 0, z: outerFaceZ + 0.02 },
-    { x: 0.7, z: outerFaceZ + 0.02 },
   ];
   const initialCandidates = candidates.map((candidate, index) => ({
     id: p2Simulation.animals[index]?.id ?? `coward-${index + 1}`,
@@ -687,9 +690,9 @@ function probeP2EntranceReservation(): P2EntranceReservationProbe {
     animal.fleeTriggerBand = "guidance";
   }
 
-  // Acquire the actual stable owner only after the simultaneous production
-  // step; the two non-owners must then be recovered outside by reconciliation.
-  stepP2DecisionAtPlayer(0, -4.2, 0, false, P2_DECISION_SECONDS);
+  // Acquire the actual owner only after a production step; the two
+  // non-owners remain outside as a physically separated waiting queue.
+  stepP2DecisionAtPlayer(0, 0, 0, false, P2_DECISION_SECONDS);
   const firstStepReservedAnimalId = p2Simulation.penReservedAnimalId;
   if (!firstStepReservedAnimalId) {
     throw new Error("P2 E2E entrance fixture did not reserve an owner on the first step");
@@ -706,11 +709,11 @@ function probeP2EntranceReservation(): P2EntranceReservationProbe {
   );
   for (let attempt = 0; attempt < 48; attempt += 1) {
     if (reservedCandidate?.phase === "enteringPen") break;
-    // Keep the player over the real owner while the production simulation
+    // Keep the player behind the real owner while the production simulation
     // advances it through the opening; no state is written by this hook.
     stepP2DecisionAtPlayer(
-      reservedCandidate?.x ?? -0.7,
-      -4.2,
+      reservedCandidate?.x ?? 0,
+      (reservedCandidate?.z ?? outerFaceZ) + 2.4,
       0,
       false,
       P2_DECISION_SECONDS,
@@ -724,6 +727,7 @@ function probeP2EntranceReservation(): P2EntranceReservationProbe {
   return {
     entranceClearance,
     outerFaceZ,
+    minimumAnimalSeparation: queueSpacing,
     decisionStepSeconds: P2_DECISION_SECONDS,
     initialCandidates,
     firstStepReservedAnimalId,
@@ -984,7 +988,7 @@ window.__OITATE_P2__ = {
     ? {
         e2e: {
           runCompletionReplay: runP2CompletionReplay,
-          probeEntranceReservation: probeP2EntranceReservation,
+          probeEntranceQueue: probeP2EntranceQueue,
         },
       }
     : {}),
