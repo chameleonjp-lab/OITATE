@@ -1054,6 +1054,79 @@ function pulseP6Haptics(pattern: number | number[]): void {
   navigator.vibrate(pattern);
 }
 
+function showResume(reason: string): void {
+  paused = true;
+  resumeRequired = true;
+  pauseReason.textContent = reason;
+  const canShow = !portrait && document.visibilityState !== "hidden";
+  resumeOverlay.hidden = !canShow;
+  orientationOverlay.hidden = !portrait;
+  movement.reset();
+  clearSimulationDebt();
+  if (canShow) blockInteraction(resumeButton);
+}
+
+const lifecyclePauseLabels: Record<LifecyclePauseReason, string> = {
+  visibility: "画面が非表示になりました",
+  blur: "画面からフォーカスが外れました",
+  pagehide: "ページがバックグラウンドになりました",
+};
+
+const lifecycleReturnLabels: Record<LifecycleReturnReason, string> = {
+  visibility: "画面へ戻りました",
+  focus: "画面へ戻りました",
+  pageshow: "ページへ戻りました",
+};
+
+function requestAutoPause(reason: LifecyclePauseReason): void {
+  paused = true;
+  resumeRequired = true;
+  pauseReason.textContent = lifecyclePauseLabels[reason];
+  resumeOverlay.hidden = true;
+  movement.reset();
+  clearSimulationDebt();
+  blockInteraction();
+}
+
+function handleLifecycleReturn(reason: LifecycleReturnReason): void {
+  if (!resumeRequired) return;
+  showResume(lifecycleReturnLabels[reason]);
+}
+
+function pulseSignal(signal: SignalType): void {
+  if (!p1ProbeEnabled || paused || portrait) return;
+  const startedAt = performance.now();
+  const button = required<HTMLButtonElement>(`button[data-signal='${signal}']`);
+  signalFireCount += 1;
+  button.dataset.fireCount = String(Number(button.dataset.fireCount ?? "0") + 1);
+  button.classList.remove("did-fire");
+  void button.offsetWidth;
+  button.classList.add("did-fire");
+  feedback.textContent = signal === "guidance"
+    ? "誘導入力（P3では動物に効果なし）"
+    : "威嚇入力（P3では動物に効果なし）";
+  feedback.dataset.signal = signal;
+  feedback.classList.remove("is-visible");
+  void feedback.offsetWidth;
+  feedback.classList.add("is-visible");
+  lastSignalLatency = performance.now() - startedAt;
+  window.setTimeout(() => feedback.classList.remove("is-visible"), 520);
+}
+
+function pulseP4ThreatSignal(): void {
+  if (!p4Mode || paused || portrait || p4ResultShown) return;
+  p4PendingThreatSignal = true;
+  p4ThreatButton.classList.remove("did-fire");
+  void p4ThreatButton.offsetWidth;
+  p4ThreatButton.classList.add("did-fire");
+  feedback.textContent = "威嚇音：危険種を主人公へ引きつけます";
+  feedback.dataset.signal = "threat";
+  feedback.classList.remove("is-visible");
+  void feedback.offsetWidth;
+  feedback.classList.add("is-visible");
+  window.setTimeout(() => feedback.classList.remove("is-visible"), 520);
+}
+
 function pulseP5Signal(signal: "guidance" | "threat"): void {
   if (!p5WorldMode || paused || portrait || (p6Mode ? p6ResultShown : p5ResultShown)) return;
   if (signal === "guidance") p5PendingGuidanceSignal = true;
