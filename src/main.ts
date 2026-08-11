@@ -13,14 +13,37 @@ import {
 } from "./game/movement";
 import {
   constrainCircleAgainstPenRails,
-  createP2Simulation,
-  P2_TUNING,
-  stepP2Simulation,
-  type CowardAnimalState,
-  type P2SimulationState,
 } from "./game/p2-cowardly-simulation";
+import {
+  createP3Simulation,
+  P3_TUNING,
+  stepP3Simulation,
+  type P3AnimalState,
+  type P3SimulationState,
+} from "./game/p3-cowardly-simulation";
 import { FixedStepSimulation } from "./game/fixed-step";
 import "./styles.css";
+
+interface P3PublicState {
+  capturedCount: number;
+  completed: boolean;
+  decisionUpdates: number;
+  penReservedAnimalId: string | null;
+  flock: P3SimulationState["flock"];
+  animals: Array<{
+    id: string;
+    phase: P3AnimalState["phase"];
+    pressureBand: P3AnimalState["pressureBand"];
+    tension: number;
+    tensionState: P3AnimalState["tensionState"];
+    confusionCause: P3AnimalState["confusionCause"];
+    waitingSeconds: number;
+    recoveryCount: number;
+    fullBodyInside: boolean;
+    x: number;
+    z: number;
+  }>;
+}
 
 interface P1State {
   paused: boolean;
@@ -35,23 +58,12 @@ interface P1State {
   signalFireCount: number;
   simulationSteps: number;
   droppedSimulationSeconds: number;
-  p2: {
-    capturedCount: number;
-    completed: boolean;
-    decisionUpdates: number;
-    penReservedAnimalId: string | null;
-    animals: Array<{
-      id: string;
-      phase: CowardAnimalState["phase"];
-      pressureBand: CowardAnimalState["pressureBand"];
-      fullBodyInside: boolean;
-      x: number;
-      z: number;
-    }>;
-  };
+  /** Kept under the old key for P1/P2 diagnostic compatibility. */
+  p2: P3PublicState;
+  p3: P3PublicState;
 }
 
-interface P2EntranceQueueProbe {
+interface P3EntranceQueueProbe {
   /** Fixed fixture evidence for the body-aware entrance sweep. */
   entranceClearance: number;
   outerFaceZ: number;
@@ -61,7 +73,7 @@ interface P2EntranceQueueProbe {
   firstStepReservedAnimalId: string | null;
   firstStepAnimals: Array<{
     id: string;
-    phase: CowardAnimalState["phase"];
+    phase: P3AnimalState["phase"];
     x: number;
     z: number;
   }>;
@@ -70,17 +82,19 @@ interface P2EntranceQueueProbe {
   capturedCount: number;
 }
 
-interface P2E2ETestHooks {
+interface P3E2ETestHooks {
   runCompletionReplay: () => void;
-  probeEntranceQueue: () => P2EntranceQueueProbe;
+  probeEntranceQueue: () => P3EntranceQueueProbe;
 }
 
-interface P2PublicApi {
-  getState: () => P1State["p2"];
+interface P3PublicApi {
+  getState: () => P3PublicState;
   retry: () => void;
-  /** Test-only actions are added only for ?p2-e2e=1. */
-  e2e?: P2E2ETestHooks;
+  /** Test-only actions are added only for ?p3-e2e=1 (or legacy ?p2-e2e=1). */
+  e2e?: P3E2ETestHooks;
 }
+
+type P2PublicApi = P3PublicApi;
 
 declare global {
   interface Window {
@@ -89,6 +103,7 @@ declare global {
     };
     /** State access remains compatible with the P1 diagnostic surface. */
     __OITATE_P2__: P2PublicApi;
+    __OITATE_P3__: P2PublicApi;
   }
 }
 
@@ -108,16 +123,16 @@ root.innerHTML = `
       <header class="top-bar">
         <div>
           <p class="eyebrow p1-eyebrow">P1 操作試作</p>
-          <p class="eyebrow p2-eyebrow">P2 面白さ試作</p>
+          <p class="eyebrow p2-eyebrow">P3 最初に遊べる版</p>
           <h1>臆病種を囲いへ</h1>
         </div>
         <button class="icon-button" type="button" data-action="pause" aria-label="一時停止">Ⅱ</button>
       </header>
 
-      <section class="p2-status" data-testid="p2-status" aria-live="polite" aria-label="P2試作の状態">
+      <section class="p2-status" data-testid="p2-status" aria-live="polite" aria-label="P3試作の状態">
         <strong>動物の反応を観察する</strong>
-        <span id="p2-status-text">3体の反応を観察し、囲いへ導きます</span>
-        <span id="p2-count-text">収容 0 / 3</span>
+        <span id="p2-status-text">6体の群れを観察し、囲いへ導きます</span>
+        <span id="p2-count-text">収容 0 / 6</span>
       </section>
 
       <aside class="diagnostics" data-testid="diagnostics" aria-label="開発用診断">
@@ -133,7 +148,7 @@ root.innerHTML = `
         <span id="diag-simulation">固定更新 遅延破棄 0.000秒</span>
       </aside>
 
-      <div class="world-label animal-label" aria-hidden="true">臆病種 × 3</div>
+      <div class="world-label animal-label" aria-hidden="true">臆病種 × 6</div>
       <div class="world-label player-label" aria-hidden="true">主人公</div>
       <div class="signal-feedback" id="signal-feedback" aria-live="polite"></div>
 
@@ -145,8 +160,8 @@ root.innerHTML = `
         <span class="zone-hint">ここに触れて移動</span>
       </div>
 
-      <div class="signal-controls" aria-label="P1用入力回帰（P2では動物に効果なし）">
-        <span class="signal-note">P1入力回帰<br />P2では効果なし</span>
+      <div class="signal-controls" aria-label="P1用入力回帰（P3では動物に効果なし）">
+        <span class="signal-note">P1入力回帰<br />P3では効果なし</span>
         <button type="button" class="signal-button guidance" data-signal="guidance" data-signal-state="idle" data-fire-count="0">
           <span aria-hidden="true">♪</span><small>誘導</small>
         </button>
@@ -175,9 +190,9 @@ root.innerHTML = `
 
     <section class="blocking-overlay" id="p2-complete-overlay" role="dialog" aria-modal="true" aria-labelledby="p2-complete-title" tabindex="-1" hidden>
       <div class="overlay-card">
-        <p class="eyebrow">P2 面白さ試作</p>
-        <h2 id="p2-complete-title">3体を囲いへ収容しました</h2>
-        <p>主人公の位置で反応を読み、反対側へ回り込む遊びをもう一度試せます。</p>
+        <p class="eyebrow">P3 最初に遊べる版</p>
+        <h2 id="p2-complete-title">6体を囲いへ収容しました</h2>
+        <p>群れのまとまりと入口の順番を考えながら、もう一度試せます。</p>
         <button type="button" class="resume-button" data-action="p2-retry">もう一度試す</button>
       </div>
     </section>
@@ -205,7 +220,8 @@ const p2RetryButton = required<HTMLButtonElement>("[data-action='p2-retry']");
 const signalControls = required<HTMLElement>(".signal-controls");
 const query = new URLSearchParams(window.location.search);
 const p1ProbeEnabled = query.get("p1-probe") === "1";
-const p2E2EEnabled = import.meta.env.DEV && query.get("p2-e2e") === "1";
+const p3E2EEnabled = import.meta.env.DEV
+  && (query.get("p3-e2e") === "1" || query.get("p2-e2e") === "1");
 const debugEnabled = p1ProbeEnabled || query.get("debug") === "1";
 signalControls.hidden = !p1ProbeEnabled;
 root.querySelector<HTMLElement>(".p1-eyebrow")?.toggleAttribute("hidden", !p1ProbeEnabled);
@@ -277,7 +293,14 @@ interface CowardVisual {
   escapeArrow: THREE.Mesh;
 }
 
-const cowardVisualColors = [0xf0ead8, 0xd7f0df, 0xf3d6b6] as const;
+const cowardVisualColors = [
+  0xf0ead8,
+  0xd7f0df,
+  0xf3d6b6,
+  0xe5d4f0,
+  0xf0e0b8,
+  0xcfe7ee,
+] as const;
 const cowardVisuals: CowardVisual[] = [];
 
 function createCowardVisual(index: number): CowardVisual {
@@ -332,9 +355,9 @@ function createCowardVisual(index: number): CowardVisual {
   return visual;
 }
 
-createCowardVisual(0);
-createCowardVisual(1);
-createCowardVisual(2);
+for (let index = 0; index < P3_TUNING.animalCount; index += 1) {
+  createCowardVisual(index);
+}
 
 const penVisual = new THREE.Group();
 const penFloor = new THREE.Mesh(
@@ -389,20 +412,20 @@ const fixedStep = new FixedStepSimulation();
 const simulationPosition = player.position.clone();
 const previousSimulationPosition = simulationPosition.clone();
 let simulationRotationY = player.rotation.y;
-let p2Simulation: P2SimulationState = createP2Simulation();
-const P2_DECISION_SECONDS = 1 / 20;
+let p3Simulation: P3SimulationState = createP3Simulation();
+const P3_DECISION_SECONDS = P3_TUNING.decisionStepSeconds;
 const PLAYER_COLLISION_RADIUS = 0.52;
-let p2DecisionAccumulator = 0;
-let p2DecisionUpdates = 0;
-let p2CompleteShown = false;
+let p3DecisionAccumulator = 0;
+let p3DecisionUpdates = 0;
+let p3CompleteShown = false;
 let previousFocus: HTMLElement | null = null;
 
 function clearSimulationDebt(): void {
   fixedStep.clearAccumulator();
-  p2DecisionAccumulator = 0;
+  p3DecisionAccumulator = 0;
   previousSimulationPosition.copy(simulationPosition);
   player.position.copy(simulationPosition);
-  for (const animal of p2Simulation.animals) {
+  for (const animal of p3Simulation.animals) {
     animal.previousX = animal.x;
     animal.previousZ = animal.z;
   }
@@ -485,8 +508,8 @@ function pulseSignal(signal: SignalType): void {
   void button.offsetWidth;
   button.classList.add("did-fire");
   feedback.textContent = signal === "guidance"
-    ? "誘導入力（P2では動物に効果なし）"
-    : "威嚇入力（P2では動物に効果なし）";
+    ? "誘導入力（P3では動物に効果なし）"
+    : "威嚇入力（P3では動物に効果なし）";
   feedback.dataset.signal = signal;
   feedback.classList.remove("is-visible");
   void feedback.offsetWidth;
@@ -537,13 +560,13 @@ resumeButton.addEventListener("click", () => {
   lastFrameTime = performance.now();
 });
 
-function resetP2Prototype(): void {
-  p2Simulation = createP2Simulation();
-  p2DecisionAccumulator = 0;
-  p2DecisionUpdates = 0;
-  p2CompleteShown = false;
-  p2StatusText.textContent = "3体の反応を観察し、囲いへ導きます";
-  p2CountText.textContent = "収容 0 / 3";
+function resetP3Prototype(): void {
+  p3Simulation = createP3Simulation();
+  p3DecisionAccumulator = 0;
+  p3DecisionUpdates = 0;
+  p3CompleteShown = false;
+  p2StatusText.textContent = "6体の群れを観察し、囲いへ導きます";
+  p2CountText.textContent = "収容 0 / 6";
   simulationPosition.set(0, 0, 4.5);
   previousSimulationPosition.copy(simulationPosition);
   player.position.copy(simulationPosition);
@@ -551,68 +574,68 @@ function resetP2Prototype(): void {
   clearSimulationDebt();
 }
 
-function showP2Complete(): void {
-  if (p2CompleteShown) return;
-  p2CompleteShown = true;
+function showP3Complete(): void {
+  if (p3CompleteShown) return;
+  p3CompleteShown = true;
   paused = true;
   resumeRequired = false;
   input.clearAllInput("manual-clear");
-  p2StatusText.textContent = "3体とも全身が囲いの内側へ入りました";
-  p2CountText.textContent = "収容 3 / 3　試作完了";
+  p2StatusText.textContent = "6体とも全身が囲いの内側へ入りました";
+  p2CountText.textContent = "収容 6 / 6　P3完了";
   p2CompleteOverlay.hidden = false;
   blockInteraction(p2RetryButton);
 }
 
-function retryP2Prototype(): void {
-  if (!p2CompleteShown) return;
+function retryP3Prototype(): void {
+  if (!p3CompleteShown) return;
   p2CompleteOverlay.hidden = true;
-  resetP2Prototype();
+  resetP3Prototype();
   paused = false;
   resumeRequired = false;
   if (interactionLayer.inert) unblockInteraction();
   lastFrameTime = performance.now();
 }
 
-p2RetryButton.addEventListener("click", retryP2Prototype);
+p2RetryButton.addEventListener("click", retryP3Prototype);
 
 /**
- * Runs one animal decision through the production P2 simulation. E2E replay
+ * Runs one animal decision through the production P3 simulation. E2E replay
  * helpers use this same path with a deterministic fixture instead of
  * reimplementing the capture or entrance rules in the browser harness.
  */
-function stepP2DecisionAtPlayer(
+function stepP3DecisionAtPlayer(
   x: number,
   z: number,
   speed: number,
   isRunning: boolean,
   deltaSeconds: number,
 ): void {
-  const decision = stepP2Simulation(
-    p2Simulation,
+  const decision = stepP3Simulation(
+    p3Simulation,
     { x, z, speed, isRunning },
     deltaSeconds,
   );
-  p2DecisionUpdates += 1;
-  if (decision.completed) showP2Complete();
-  updateP2Status();
+  p3DecisionUpdates += 1;
+  if (decision.completed) showP3Complete();
+  updateP3Status();
 }
 
-function prepareP2E2EFixture(): void {
+function prepareP3E2EFixture(): void {
   p2CompleteOverlay.hidden = true;
   if (interactionLayer.inert) unblockInteraction();
-  resetP2Prototype();
+  resetP3Prototype();
   input.clearAllInput("manual-clear");
   paused = false;
   resumeRequired = false;
   lastFrameTime = performance.now();
 }
 
-function primeEnteringAnimal(index: number): void {
-  const animal = p2Simulation.animals[index];
-  if (!animal) throw new Error(`P2 E2E fixture animal ${index} is missing`);
-  const x = [-1.55, 0, 1.55][index] ?? 0;
+function primeP3EnteringAnimal(index: number): void {
+  const animal = p3Simulation.animals[index];
+  if (!animal) throw new Error(`P3 E2E fixture animal ${index} is missing`);
+  const x = [-3.1, -1.86, -0.62, 0.62, 1.86, 3.1][index] ?? 0;
   animal.x = x;
-  animal.z = p2Simulation.pen.centerZ;
+  animal.z = p3Simulation.pen.centerZ;
   animal.previousX = animal.x;
   animal.previousZ = animal.z;
   animal.phase = "enteringPen";
@@ -626,53 +649,59 @@ function primeEnteringAnimal(index: number): void {
   animal.pressureReleaseSeconds = 0;
   animal.pressureBand = "none";
   animal.fleeTriggerBand = null;
+  animal.tension = 0;
+  animal.tensionState = "calm";
+  animal.confusionSeconds = 0;
+  animal.confusionCause = "none";
+  animal.waitingSeconds = 0;
+  animal.backoffSeconds = 0;
+  animal.stuckSeconds = 0;
   // The fixture represents an already granted entrance token; the
   // production reconciliation then owns and advances this body normally.
-  p2Simulation.penReservedAnimalId = animal.id;
+  p3Simulation.penReservedAnimalId = animal.id;
 }
 
-function runP2CompletionReplay(): void {
-  prepareP2E2EFixture();
+function runP3CompletionReplay(): void {
+  prepareP3E2EFixture();
   const playerX = 0;
   const playerZ = 4.5;
 
-  for (let index = 0; index < p2Simulation.animals.length; index += 1) {
-    primeEnteringAnimal(index);
-    const animal = p2Simulation.animals[index];
-    for (let holdStep = 0; holdStep < 10 && animal?.phase !== "captured"; holdStep += 1) {
-      stepP2DecisionAtPlayer(
+  for (let index = 0; index < p3Simulation.animals.length; index += 1) {
+    primeP3EnteringAnimal(index);
+    const animal = p3Simulation.animals[index];
+    for (let holdStep = 0; holdStep < 12 && animal?.phase !== "captured"; holdStep += 1) {
+      stepP3DecisionAtPlayer(
         playerX,
         playerZ,
         0,
         false,
-        P2_DECISION_SECONDS,
+        P3_DECISION_SECONDS,
       );
     }
     if (animal?.phase !== "captured") {
-      throw new Error(`P2 E2E completion fixture did not capture ${animal?.id ?? index}`);
+      throw new Error(`P3 E2E completion fixture did not capture ${animal?.id ?? index}`);
     }
   }
 }
 
-function probeP2EntranceQueue(): P2EntranceQueueProbe {
-  prepareP2E2EFixture();
-  const entranceClearance = p2Simulation.pen.entranceHalfWidth - p2Simulation.pen.animalRadius;
-  const outerFaceZ = p2Simulation.pen.entranceZ + p2Simulation.pen.animalRadius;
-  const queueSpacing = P2_TUNING.minimumAnimalSeparation;
-  const candidates = [
-    // The queue is deliberately non-overlapping. Only the nearest body is
-    // close enough to self-sweep this tick; both followers remain outside.
-    { x: 0, z: outerFaceZ + queueSpacing * 2 + 0.02 },
-    { x: 0, z: outerFaceZ + queueSpacing + 0.02 },
-    { x: 0, z: outerFaceZ + 0.02 },
-  ];
+function probeP3EntranceQueue(): P3EntranceQueueProbe {
+  prepareP3E2EFixture();
+  const entranceClearance = p3Simulation.pen.entranceHalfWidth - p3Simulation.pen.animalRadius;
+  const outerFaceZ = p3Simulation.pen.entranceZ + p3Simulation.pen.animalRadius;
+  const queueSpacing = P3_TUNING.minimumAnimalSeparation;
+  const candidates = Array.from({ length: p3Simulation.animals.length }, (_, index) => ({
+    // The nearest body is last in the stable list, so the other five form a
+    // physically separated staging queue behind it.
+    x: 0,
+    z: outerFaceZ + queueSpacing * (p3Simulation.animals.length - index - 1) + 0.02,
+  }));
   const initialCandidates = candidates.map((candidate, index) => ({
-    id: p2Simulation.animals[index]?.id ?? `coward-${index + 1}`,
+    id: p3Simulation.animals[index]?.id ?? `coward-${index + 1}`,
     ...candidate,
   }));
   for (const [index, candidate] of candidates.entries()) {
-    const animal = p2Simulation.animals[index];
-    if (!animal) throw new Error(`P2 E2E entrance fixture animal ${index} is missing`);
+    const animal = p3Simulation.animals[index];
+    if (!animal) throw new Error(`P3 E2E entrance fixture animal ${index} is missing`);
     animal.x = candidate.x;
     animal.z = candidate.z;
     animal.previousX = candidate.x;
@@ -690,33 +719,33 @@ function probeP2EntranceQueue(): P2EntranceQueueProbe {
     animal.fleeTriggerBand = "guidance";
   }
 
-  // Acquire the actual owner only after a production step; the two
+  // Acquire the actual owner only after a production step; the five
   // non-owners remain outside as a physically separated waiting queue.
-  stepP2DecisionAtPlayer(0, 0, 0, false, P2_DECISION_SECONDS);
-  const firstStepReservedAnimalId = p2Simulation.penReservedAnimalId;
+  stepP3DecisionAtPlayer(0, 0, 0, false, P3_DECISION_SECONDS);
+  const firstStepReservedAnimalId = p3Simulation.penReservedAnimalId;
   if (!firstStepReservedAnimalId) {
-    throw new Error("P2 E2E entrance fixture did not reserve an owner on the first step");
+    throw new Error("P3 E2E entrance fixture did not reserve an owner on the first step");
   }
-  const firstStepAnimals = p2Simulation.animals.map((animal) => ({
+  const firstStepAnimals = p3Simulation.animals.map((animal) => ({
     id: animal.id,
     phase: animal.phase,
     x: animal.x,
     z: animal.z,
   }));
 
-  const reservedCandidate = p2Simulation.animals.find(
+  const reservedCandidate = p3Simulation.animals.find(
     (animal) => animal.id === firstStepReservedAnimalId,
   );
   for (let attempt = 0; attempt < 48; attempt += 1) {
     if (reservedCandidate?.phase === "enteringPen") break;
     // Keep the player behind the real owner while the production simulation
     // advances it through the opening; no state is written by this hook.
-    stepP2DecisionAtPlayer(
+    stepP3DecisionAtPlayer(
       reservedCandidate?.x ?? 0,
       (reservedCandidate?.z ?? outerFaceZ) + 2.4,
       0,
       false,
-      P2_DECISION_SECONDS,
+      P3_DECISION_SECONDS,
     );
   }
 
@@ -728,15 +757,15 @@ function probeP2EntranceQueue(): P2EntranceQueueProbe {
     entranceClearance,
     outerFaceZ,
     minimumAnimalSeparation: queueSpacing,
-    decisionStepSeconds: P2_DECISION_SECONDS,
+    decisionStepSeconds: P3_DECISION_SECONDS,
     initialCandidates,
     firstStepReservedAnimalId,
     firstStepAnimals,
-    reservedAnimalId: p2Simulation.penReservedAnimalId,
-    enteringAnimalIds: p2Simulation.animals
+    reservedAnimalId: p3Simulation.penReservedAnimalId,
+    enteringAnimalIds: p3Simulation.animals
       .filter((animal) => animal.phase === "enteringPen")
       .map((animal) => animal.id),
-    capturedCount: p2Simulation.capturedCount,
+    capturedCount: p3Simulation.capturedCount,
   };
 }
 
@@ -754,32 +783,38 @@ resize();
 const cameraTarget = new THREE.Vector3();
 const desiredCameraPosition = new THREE.Vector3();
 
-function updateP2Status(): void {
-  p2CountText.textContent = p2Simulation.completed
-    ? "収容 3 / 3　試作完了"
-    : `収容 ${p2Simulation.capturedCount} / 3`;
-  if (p2Simulation.completed) {
-    p2StatusText.textContent = "3体とも全身が囲いの内側へ入りました";
+function updateP3Status(): void {
+  p2CountText.textContent = p3Simulation.completed
+    ? "収容 6 / 6　P3完了"
+    : `収容 ${p3Simulation.capturedCount} / 6`;
+  if (p3Simulation.completed) {
+    p2StatusText.textContent = "6体とも全身が囲いの内側へ入りました";
     return;
   }
-  const anticipating = p2Simulation.animals.some((animal) => animal.phase === "anticipating");
-  const fleeing = p2Simulation.animals.some((animal) => animal.phase === "fleeing");
-  const entering = p2Simulation.animals.some((animal) => animal.phase === "enteringPen");
+  const anticipating = p3Simulation.animals.some((animal) => animal.phase === "anticipating");
+  const confused = p3Simulation.animals.some((animal) => animal.tensionState === "confused");
+  const waiting = p3Simulation.animals.some((animal) => animal.phase === "waitingForEntrance");
+  const fleeing = p3Simulation.animals.some((animal) => animal.phase === "fleeing");
+  const entering = p3Simulation.animals.some((animal) => animal.phase === "enteringPen");
   if (anticipating) {
     p2StatusText.textContent = "動物がこちらを見ています";
+  } else if (confused) {
+    p2StatusText.textContent = "群れが混乱しています。位置を整えます";
+  } else if (waiting) {
+    p2StatusText.textContent = "入口を順番に待っています";
   } else if (fleeing) {
     p2StatusText.textContent = "動物が反応しています";
   } else if (entering) {
     p2StatusText.textContent = "囲いへ進入中：全身が内側へ入るまで待ちます";
   } else {
-    p2StatusText.textContent = "3体の反応を観察し、囲いへ導きます";
+    p2StatusText.textContent = "6体の群れを観察し、囲いへ導きます";
   }
 }
 
-function updateP2Visuals(interpolationAlpha: number): void {
+function updateP3Visuals(interpolationAlpha: number): void {
   for (let index = 0; index < cowardVisuals.length; index += 1) {
     const visual = cowardVisuals[index];
-    const animal = p2Simulation.animals[index];
+    const animal = p3Simulation.animals[index];
     if (!visual || !animal) continue;
     visual.group.position.set(
       THREE.MathUtils.lerp(animal.previousX, animal.x, interpolationAlpha),
@@ -788,9 +823,15 @@ function updateP2Visuals(interpolationAlpha: number): void {
     );
     // Captured animals remain visible in the pen so success is readable.
     visual.group.visible = true;
-    visual.reactionRing.visible = animal.phase === "anticipating";
+    visual.reactionRing.visible = animal.phase === "anticipating"
+      || animal.tensionState === "alert"
+      || animal.tensionState === "confused";
+    const ringMaterial = visual.reactionRing.material as THREE.MeshBasicMaterial;
+    ringMaterial.color.set(animal.tensionState === "confused" ? 0xff7777 : 0xffe085);
     visual.escapeArrow.visible = debugEnabled
-      && (animal.phase === "anticipating" || animal.phase === "fleeing");
+      && (animal.phase === "anticipating"
+        || animal.phase === "fleeing"
+        || animal.tensionState === "confused");
     const direction = animal.phase === "anticipating"
       ? { x: animal.escapeX, z: animal.escapeZ }
       : { x: animal.lastMoveX, z: animal.lastMoveZ };
@@ -798,7 +839,7 @@ function updateP2Visuals(interpolationAlpha: number): void {
       visual.group.rotation.y = Math.atan2(-direction.x, -direction.z);
       visual.escapeArrow.rotation.y = Math.atan2(direction.x, direction.z);
     }
-    if (animal.phase === "anticipating") {
+    if (animal.phase === "anticipating" || animal.tensionState !== "calm") {
       const pulse = 1 + Math.sin(animal.phaseSeconds * 14) * 0.08;
       visual.reactionRing.scale.setScalar(pulse);
     }
@@ -833,8 +874,14 @@ function updateDiagnostics(deltaSeconds: number, speed: number): void {
   diagnostics.simulation.textContent = `固定更新 遅延破棄 ${fixedStep.diagnostics.droppedTimeSeconds.toFixed(3)}秒`;
   root.dataset.playerX = simulationPosition.x.toFixed(3);
   root.dataset.playerZ = simulationPosition.z.toFixed(3);
-  root.dataset.p2Captured = String(p2Simulation.capturedCount);
-  root.dataset.p2Complete = String(p2Simulation.completed);
+  root.dataset.p2Captured = String(p3Simulation.capturedCount);
+  root.dataset.p2Complete = String(p3Simulation.completed);
+  root.dataset.p3Captured = String(p3Simulation.capturedCount);
+  root.dataset.p3Complete = String(p3Simulation.completed);
+  root.dataset.p3Flock = p3Simulation.flock.state;
+  root.dataset.p3Recovered = String(
+    p3Simulation.animals.reduce((sum, animal) => sum + animal.recoveryCount, 0),
+  );
   root.dataset.paused = String(paused);
 }
 
@@ -865,7 +912,7 @@ function simulate(stepSeconds: number): void {
     const constrainedPlayer = constrainCircleAgainstPenRails(
       previousSimulationPosition,
       simulationPosition,
-      p2Simulation.pen,
+      p3Simulation.pen,
       PLAYER_COLLISION_RADIUS,
     );
     simulationPosition.x = constrainedPlayer.x;
@@ -874,17 +921,17 @@ function simulate(stepSeconds: number): void {
       simulationRotationY = Math.atan2(-direction.x, -direction.z);
     }
 
-    // P1 keeps integrating input and the player at 60Hz. The P2 animal
+    // P1 keeps integrating input and the player at 60Hz. The P3 animal
     // decision slice is intentionally lower-frequency and deterministic.
-    p2DecisionAccumulator += stepSeconds;
-    while (p2DecisionAccumulator >= P2_DECISION_SECONDS) {
-      p2DecisionAccumulator -= P2_DECISION_SECONDS;
-      stepP2DecisionAtPlayer(
+    p3DecisionAccumulator += stepSeconds;
+    while (p3DecisionAccumulator >= P3_DECISION_SECONDS) {
+      p3DecisionAccumulator -= P3_DECISION_SECONDS;
+      stepP3DecisionAtPlayer(
         simulationPosition.x,
         simulationPosition.z,
         speed,
         speed >= 3.2,
-        P2_DECISION_SECONDS,
+        P3_DECISION_SECONDS,
       );
     }
   } else {
@@ -913,13 +960,13 @@ function frame(now: number): void {
 
   // Keep the active animals readable while retaining the P1 camera yaw and
   // movement-basis rules. The 35/65 focus is a view aid, not auto-navigation.
-  const activeAnimals = p2Simulation.animals.filter((animal) => animal.phase !== "captured");
+  const activeAnimals = p3Simulation.animals.filter((animal) => animal.phase !== "captured");
   const subjectX = activeAnimals.length > 0
     ? activeAnimals.reduce((sum, animal) => sum + animal.x, 0) / activeAnimals.length
-    : p2Simulation.pen.centerX;
+    : p3Simulation.pen.centerX;
   const subjectZ = activeAnimals.length > 0
     ? activeAnimals.reduce((sum, animal) => sum + animal.z, 0) / activeAnimals.length
-    : p2Simulation.pen.centerZ;
+    : p3Simulation.pen.centerZ;
   const focusX = THREE.MathUtils.lerp(player.position.x, subjectX, 0.35);
   const focusZ = THREE.MathUtils.lerp(player.position.z, subjectZ, 0.35);
   cameraTarget.set(focusX, 0.85, focusZ);
@@ -932,15 +979,38 @@ function frame(now: number): void {
   camera.position.lerp(desiredCameraPosition, cameraFollow);
   camera.lookAt(cameraTarget);
 
-  const p2InterpolationAlpha = THREE.MathUtils.clamp(
-    p2DecisionAccumulator / P2_DECISION_SECONDS,
+  const p3InterpolationAlpha = THREE.MathUtils.clamp(
+    p3DecisionAccumulator / P3_DECISION_SECONDS,
     0,
     1,
   );
-  updateP2Visuals(p2InterpolationAlpha);
+  updateP3Visuals(p3InterpolationAlpha);
   updateDiagnostics(renderDeltaSeconds, movement.speed);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
+}
+
+function getP3PublicState(): P3PublicState {
+  return {
+    capturedCount: p3Simulation.capturedCount,
+    completed: p3Simulation.completed,
+    decisionUpdates: p3DecisionUpdates,
+    penReservedAnimalId: p3Simulation.penReservedAnimalId,
+    flock: { ...p3Simulation.flock },
+    animals: p3Simulation.animals.map((animal) => ({
+      id: animal.id,
+      phase: animal.phase,
+      pressureBand: animal.pressureBand,
+      tension: animal.tension,
+      tensionState: animal.tensionState,
+      confusionCause: animal.confusionCause,
+      waitingSeconds: animal.waitingSeconds,
+      recoveryCount: animal.recoveryCount,
+      fullBodyInside: animal.fullBodyInside,
+      x: animal.x,
+      z: animal.z,
+    })),
+  };
 }
 
 window.__OITATE_P1__ = {
@@ -963,40 +1033,36 @@ window.__OITATE_P1__ = {
       signalFireCount,
       simulationSteps: fixedStep.diagnostics.totalSteps,
       droppedSimulationSeconds: fixedStep.diagnostics.droppedTimeSeconds,
-      p2: {
-        capturedCount: p2Simulation.capturedCount,
-        completed: p2Simulation.completed,
-        decisionUpdates: p2DecisionUpdates,
-        penReservedAnimalId: p2Simulation.penReservedAnimalId,
-        animals: p2Simulation.animals.map((animal) => ({
-          id: animal.id,
-          phase: animal.phase,
-          pressureBand: animal.pressureBand,
-          fullBodyInside: animal.fullBodyInside,
-          x: animal.x,
-          z: animal.z,
-        })),
-      },
+      p2: getP3PublicState(),
+      p3: getP3PublicState(),
     };
   },
 };
 
-window.__OITATE_P2__ = {
-  getState: () => window.__OITATE_P1__.getState().p2,
-  retry: retryP2Prototype,
-  ...(p2E2EEnabled
+const p3Api: P2PublicApi = {
+  getState: () => window.__OITATE_P1__.getState().p3,
+  retry: retryP3Prototype,
+  ...(p3E2EEnabled
     ? {
         e2e: {
-          runCompletionReplay: runP2CompletionReplay,
-          probeEntranceQueue: probeP2EntranceQueue,
+          runCompletionReplay: runP3CompletionReplay,
+          probeEntranceQueue: probeP3EntranceQueue,
         },
       }
     : {}),
 };
+window.__OITATE_P3__ = p3Api;
+// Preserve the P2 diagnostic surface as a compatibility alias for existing
+// harnesses while the visible and canonical prototype is now P3.
+window.__OITATE_P2__ = {
+  ...p3Api,
+  getState: () => window.__OITATE_P1__.getState().p2,
+};
 
 root.dataset.ready = "true";
-// Keep the P1 probe attribute for regression checks while exposing the P2
+// Keep the P1 probe attribute for regression checks while exposing the P3
 // world separately for the new slice.
 root.dataset.worldEntities = "player,animal";
-root.dataset.p2WorldEntities = "player,coward-1,coward-2,coward-3,pen";
+root.dataset.p2WorldEntities = "player,coward-1,coward-2,coward-3,coward-4,coward-5,coward-6,pen";
+root.dataset.p3WorldEntities = "player,coward-1,coward-2,coward-3,coward-4,coward-5,coward-6,pen";
 requestAnimationFrame(frame);
