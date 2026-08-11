@@ -6,6 +6,8 @@
  * loop without making either earlier slice's state mutable from here.
  */
 
+import { isPressureBlockedByPen } from "./p2-cowardly-simulation";
+
 export type P5AnimalType = "coward" | "follower" | "predator";
 export type P5Route = "safe" | "fast";
 export type P5RunStatus = "active" | "completed" | "failed";
@@ -63,6 +65,7 @@ export interface P5AnimalState {
   rescueCount: number;
   captureHoldSeconds: number;
   waitingSeconds: number;
+  penRetryCooldownSeconds: number;
   insidePen: boolean;
   route: P5Route;
   lastMoveX: number;
@@ -99,6 +102,7 @@ export interface P5SimulationState {
   failureReason: P5FailureReason;
   animals: P5AnimalState[];
   pens: Record<P5AnimalType, P5Pen>;
+  penReservations: Record<P5AnimalType, string | null>;
   terrain: P5Terrain;
   discoveredRoutes: Record<P5Route, boolean>;
   eventSequence: number;
@@ -143,6 +147,8 @@ export const P5_TUNING = {
   cowardSpeed: 1.12,
   predatorSpeed: 1.2,
   playerChaseSpeed: 1.8,
+  runningSpeedMultiplier: 1.35,
+  runningSpeedThreshold: 3.2,
   attackDistance: 1.25,
   attackWarningSeconds: 1.2,
   lungeSeconds: 0.45,
@@ -157,6 +163,8 @@ export const P5_TUNING = {
   rescueProtectionSeconds: 1,
   rescueDistance: 2.25,
   captureHoldSeconds: 0.6,
+  penWaitSeconds: 0.75,
+  penRetryCooldownSeconds: 0.5,
   minimumAnimalSeparation: 1.15,
   worldMin: WORLD_MIN,
   worldMax: WORLD_MAX,
@@ -247,6 +255,7 @@ function createAnimal(
     rescueCount: 0,
     captureHoldSeconds: 0,
     waitingSeconds: 0,
+    penRetryCooldownSeconds: 0,
     insidePen: false,
     route: "safe",
     lastMoveX: 0,
@@ -268,7 +277,9 @@ export function createP5Simulation(): P5SimulationState {
     const [x, z] = followerPositions[index] ?? [7, 6];
     animals.push(createAnimal(`follower-${index + 1}`, "follower", x, z));
   }
-  animals.push(createAnimal("predator-1", "predator", 0, 0.8));
+  // Keep the predator outside the fast-route marker at spawn; route
+  // discovery must represent an animal crossing a route, not initial setup.
+  animals.push(createAnimal("predator-1", "predator", 3.6, 0.8));
 
   return {
     elapsedSeconds: 0,
@@ -280,6 +291,7 @@ export function createP5Simulation(): P5SimulationState {
       follower: { ...P5_TUNING.pens.follower },
       predator: { ...P5_TUNING.pens.predator },
     },
+    penReservations: { coward: null, follower: null, predator: null },
     terrain: {
       water: { ...P5_TUNING.terrain.water },
       bridge: { ...P5_TUNING.terrain.bridge },
@@ -333,16 +345,41 @@ function canOccupy(
   z: number,
 ): boolean {
   const water = inRect(x, z, state.terrain.water);
-  const bridge = inRect(x, z, state.terrain.bridge);
   if (!water) return true;
   if (animal.type === "coward") return false;
-  if (bridge) return true;
-  return animal.type === "predator";
+  // Followers and the predator can use both the bridge and the shallow
+  // water. Cowards must route around the water, including the bridge.
+  return true;
 }
 
 function clampWorld(animal: P5AnimalState): void {
   animal.x = clamp(animal.x, WORLD_MIN + animal.radius, WORLD_MAX - animal.radius);
   animal.z = clamp(animal.z, WORLD_MIN + animal.radius, WORLD_MAX - animal.radius);
+}
+
+function isAnimalClearOfPeers(
+  state: P5SimulationState,
+  animal: P5AnimalState,
+  x: number,
+  z: number,
+): boolean {
+  return state.animals.every((peer) => peer.id === animal.id
+    || peer.type !== animal.type
+    || peer.lifeState !== "active"
+    || distance(x, z, peer.x, peer.z) >= P5_TUNING.minimumAnimalSeparation - EPSILON);
+}
+
+function resolveAnimalOverlap(state: P5SimulationState, animal: P5AnimalState): void {
+  for (const peer of state.animals) {
+    if (peer.id === animal.id || peer.type !== animal.type || peer.lifeState !== "active") continue;
+    const currentDistance = distance(animal.x, animal.z, peer.x, peer.z);
+    if (currentDistance >= P5_TUNING.minimumAnimalSeparation - EPSILON) continue;
+    const direction = normalized(animal.x - peer.x, animal.z - peer.z);
+    const correction = (P5_TUNING.minimumAnimalSeparation - currentDistance) + EPSILON;
+    animal.x += direction.x * correction;
+    animal.z += direction.z * correction;
+    clampWorld(animal);
+  }
 }
 
 function moveAnimal(
@@ -353,6 +390,7 @@ function moveAnimal(
   speed: number,
   deltaSeconds: number,
 ): void {
+  resolveAnimalOverlap(state, animal);
   const direction = normalized(targetX - animal.x, targetZ - animal.z);
   animal.lastMoveX = direction.x;
   animal.lastMoveZ = direction.z;
@@ -365,25 +403,32 @@ function moveAnimal(
       ? state.terrain.water.minX - animal.radius - 0.05
       : state.terrain.water.maxX + animal.radius + 0.05;
     const escapeDirection = normalized(escapeX - animal.x, 0);
-    animal.x += escapeDirection.x * speed * deltaSeconds;
+    const escapeXPosition = animal.x + escapeDirection.x * speed * deltaSeconds;
+    if (isAnimalClearOfPeers(state, animal, escapeXPosition, animal.z)) {
+      animal.x = escapeXPosition;
+    }
     clampWorld(animal);
     return;
   }
   const nextX = animal.x + direction.x * speed * deltaSeconds;
   const nextZ = animal.z + direction.z * speed * deltaSeconds;
-  if (canOccupy(state, animal, nextX, nextZ)) {
+  if (canOccupy(state, animal, nextX, nextZ)
+    && isAnimalClearOfPeers(state, animal, nextX, nextZ)) {
     animal.x = nextX;
     animal.z = nextZ;
-  } else if (canOccupy(state, animal, animal.x, nextZ)) {
+  } else if (canOccupy(state, animal, animal.x, nextZ)
+    && isAnimalClearOfPeers(state, animal, animal.x, nextZ)) {
     animal.z = nextZ;
-  } else if (canOccupy(state, animal, nextX, animal.z)) {
+  } else if (canOccupy(state, animal, nextX, animal.z)
+    && isAnimalClearOfPeers(state, animal, nextX, animal.z)) {
     animal.x = nextX;
   } else {
     // A deterministic side-step keeps the simulation recoverable at water
     // edges instead of turning a terrain mismatch into a permanent stall.
     const side = animal.x <= 0 ? -1 : 1;
     const sideX = animal.x + side * speed * deltaSeconds;
-    if (canOccupy(state, animal, sideX, animal.z)) animal.x = sideX;
+    if (canOccupy(state, animal, sideX, animal.z)
+      && isAnimalClearOfPeers(state, animal, sideX, animal.z)) animal.x = sideX;
     else animal.lastMoveX = 0, animal.lastMoveZ = 0;
   }
   clampWorld(animal);
@@ -407,19 +452,19 @@ function playerOutsidePen(player: P5PlayerInput, pen: P5Pen): boolean {
   );
 }
 
-function updateRouteDiscovery(
-  state: P5SimulationState,
-  player: P5PlayerInput,
-): P5Route | null {
-  const candidates: Array<[P5Route, boolean]> = [
-    ["safe", inRect(player.x, player.z, state.terrain.safeMarker)],
-    ["fast", inRect(player.x, player.z, state.terrain.fastMarker)],
+function updateRouteDiscovery(state: P5SimulationState): P5Route | null {
+  const routeMarkers: Array<[P5Route, P5Terrain["safeMarker"]]> = [
+    ["safe", state.terrain.safeMarker],
+    ["fast", state.terrain.fastMarker],
   ];
-  for (const [route, present] of candidates) {
-    if (present && !state.discoveredRoutes[route]) {
-      state.discoveredRoutes[route] = true;
-      recordEvent(state, "routeDiscovered", route, "player-entered-route-marker");
-      return route;
+  for (const animal of state.animals) {
+    if (animal.lifeState === "disabled") continue;
+    for (const [route, marker] of routeMarkers) {
+      if (inRect(animal.x, animal.z, marker) && !state.discoveredRoutes[route]) {
+        state.discoveredRoutes[route] = true;
+        recordEvent(state, "routeDiscovered", route, `${animal.id}-entered-route-marker`);
+        return route;
+      }
     }
   }
   return null;
@@ -457,8 +502,24 @@ function setPredatorRecovery(predator: P5AnimalState): void {
   predator.waitingSeconds = 0;
 }
 
-function targetCanBeAttacked(target: P5AnimalState): boolean {
-  return target.lifeState === "active" && target.protectionSeconds <= EPSILON;
+function canSeeTarget(
+  state: P5SimulationState,
+  predator: P5AnimalState,
+  target: P5AnimalState,
+): boolean {
+  const from = { x: predator.x, z: predator.z };
+  const to = { x: target.x, z: target.z };
+  return !Object.values(state.pens).some((pen) => isPressureBlockedByPen(from, to, pen));
+}
+
+function targetCanBeAttacked(
+  state: P5SimulationState,
+  predator: P5AnimalState,
+  target: P5AnimalState,
+): boolean {
+  return target.lifeState === "active"
+    && target.protectionSeconds <= EPSILON
+    && canSeeTarget(state, predator, target);
 }
 
 function applyThreatSignal(
@@ -467,7 +528,9 @@ function applyThreatSignal(
 ): { accepted: boolean; rescued: boolean } {
   if (!player.threatSignal || state.status !== "active") return { accepted: false, rescued: false };
   const predator = getPredator(state);
-  if (predator.phase === "lunge" || predator.lifeState === "disabled") {
+  if (predator.phase === "lunge"
+    || predator.lifeState === "disabled"
+    || predator.lifeState === "captured") {
     recordEvent(state, "predatorThreatRejected", predator.id, "lunge-or-disabled");
     return { accepted: false, rescued: false };
   }
@@ -499,6 +562,47 @@ function applyThreatSignal(
   return { accepted: true, rescued: false };
 }
 
+function reservePenEntrance(
+  state: P5SimulationState,
+  animal: P5AnimalState,
+): boolean {
+  const reservation = state.penReservations[animal.type];
+  if (reservation && reservation !== animal.id) return false;
+  state.penReservations[animal.type] = animal.id;
+  return true;
+}
+
+function releasePenEntrance(
+  state: P5SimulationState,
+  animal: P5AnimalState,
+): void {
+  if (state.penReservations[animal.type] === animal.id) {
+    state.penReservations[animal.type] = null;
+  }
+}
+
+function moveWaitingAnimalBack(
+  state: P5SimulationState,
+  animal: P5AnimalState,
+  pen: P5Pen,
+  deltaSeconds: number,
+): void {
+  const numericId = Number(animal.id.match(/\d+$/)?.[0] ?? "0");
+  const side = numericId % 2 === 0 ? 1 : -1;
+  const speed = animal.type === "coward" ? P5_TUNING.cowardSpeed : P5_TUNING.followerSpeed;
+  animal.phase = "idle";
+  animal.waitingSeconds = 0;
+  animal.penRetryCooldownSeconds = P5_TUNING.penRetryCooldownSeconds;
+  moveAnimal(
+    state,
+    animal,
+    pen.centerX + side * 1.4,
+    pen.entranceZ + 1.6,
+    speed,
+    deltaSeconds,
+  );
+}
+
 function updatePrey(
   state: P5SimulationState,
   animal: P5AnimalState,
@@ -508,10 +612,25 @@ function updatePrey(
   if (animal.lifeState === "captured" || animal.lifeState === "disabled") return null;
   if (animal.lifeState === "rescuePending") return null;
   animal.protectionSeconds = Math.max(0, animal.protectionSeconds - deltaSeconds);
+  animal.penRetryCooldownSeconds = Math.max(0, animal.penRetryCooldownSeconds - deltaSeconds);
 
   const pen = state.pens[animal.type];
+  if (animal.phase === "waitingForPen") {
+    animal.waitingSeconds += deltaSeconds;
+    if (animal.waitingSeconds >= P5_TUNING.penWaitSeconds) {
+      moveWaitingAnimalBack(state, animal, pen, deltaSeconds);
+    }
+    return null;
+  }
+
   if (animal.phase === "enteringPen") {
-    moveAnimal(state, animal, pen.centerX, pen.centerZ, P5_TUNING.cowardSpeed, deltaSeconds);
+    if (!reservePenEntrance(state, animal)) {
+      animal.phase = "waitingForPen";
+      animal.waitingSeconds = 0;
+      return null;
+    }
+    const speed = animal.type === "coward" ? P5_TUNING.cowardSpeed : P5_TUNING.followerSpeed;
+    moveAnimal(state, animal, pen.centerX, pen.centerZ, speed, deltaSeconds);
     animal.insidePen = isInsidePen(animal, pen);
     if (animal.insidePen) animal.captureHoldSeconds += deltaSeconds;
     else animal.captureHoldSeconds = 0;
@@ -520,6 +639,7 @@ function updatePrey(
       animal.phase = "captured";
       animal.captureHoldSeconds = 0;
       animal.insidePen = true;
+      releasePenEntrance(state, animal);
       recordEvent(state, "animalCaptured", animal.id, "full-body-inside-pen");
       return animal.id;
     }
@@ -535,43 +655,51 @@ function updatePrey(
     );
     const underPressure = distanceToPlayer <= P5_TUNING.cowardPressureDistance;
     animal.phase = underPressure ? "fleeing" : "idle";
-    // The player determines the side of the group while the pen remains the
-    // stable destination. A calm group still makes small progress to keep
-    // the vertical slice readable when no input is being held.
-    const targetX = underPressure ? animal.x + (animal.x - player.x) * 2 : pen.centerX;
-    const targetZ = underPressure ? animal.z + (animal.z - player.z) * 2 : pen.entranceZ + 0.25;
-    moveAnimal(state, animal, targetX, targetZ, P5_TUNING.cowardSpeed * (underPressure ? 1.12 : 0.62), deltaSeconds);
+    if (underPressure) {
+      const escape = normalized(animal.x - player.x, animal.z - player.z);
+      const targetX = animal.x + escape.x * 2;
+      const targetZ = animal.z + escape.z * 2;
+      const running = player.isRunning || player.speed >= P5_TUNING.runningSpeedThreshold;
+      moveAnimal(
+        state,
+        animal,
+        targetX,
+        targetZ,
+        P5_TUNING.cowardSpeed * (running ? P5_TUNING.runningSpeedMultiplier : 1),
+        deltaSeconds,
+      );
+    } else {
+      animal.lastMoveX = 0;
+      animal.lastMoveZ = 0;
+    }
   } else {
     animal.followingSeconds = Math.max(0, animal.followingSeconds - deltaSeconds);
     const following = animal.followingSeconds > EPSILON;
     animal.phase = following ? "following" : "idle";
-    const targetX = following ? player.x : pen.centerX;
-    const targetZ = following ? player.z + 1.4 : pen.entranceZ + 0.25;
-    const speed = following ? P5_TUNING.followerSpeed : P5_TUNING.followerSpeed * 0.55;
-    moveAnimal(state, animal, targetX, targetZ, speed, deltaSeconds);
-    if (following && inRect(animal.x, animal.z, state.terrain.bridge)) {
-      animal.route = "fast";
-      state.discoveredRoutes.fast = true;
+    if (following) {
+      const running = player.isRunning || player.speed >= P5_TUNING.runningSpeedThreshold;
+      moveAnimal(
+        state,
+        animal,
+        player.x,
+        player.z + 1.4,
+        P5_TUNING.followerSpeed * (running ? P5_TUNING.runningSpeedMultiplier : 1),
+        deltaSeconds,
+      );
+    } else {
+      animal.lastMoveX = 0;
+      animal.lastMoveZ = 0;
     }
   }
 
-  if (inRect(animal.x, animal.z, state.terrain.safeMarker)
-    && !state.discoveredRoutes.safe) {
-    state.discoveredRoutes.safe = true;
-    recordEvent(state, "routeDiscovered", "safe", "animal-entered-safe-route");
-  }
-
-  if (isAtEntrance(animal, pen)) {
-    const owner = state.animals
-      .filter((candidate) => candidate.type === animal.type && candidate.phase === "enteringPen")
-      .sort((first, second) => first.id.localeCompare(second.id))[0];
-    if (!owner || owner.id === animal.id) {
+  if (animal.penRetryCooldownSeconds <= EPSILON && isAtEntrance(animal, pen)) {
+    if (reservePenEntrance(state, animal)) {
       animal.phase = "enteringPen";
       animal.waitingSeconds = 0;
       recordEvent(state, "animalEnteredPen", animal.id, "entrance-reserved");
     } else {
       animal.phase = "waitingForPen";
-      animal.waitingSeconds += deltaSeconds;
+      animal.waitingSeconds = 0;
     }
   }
   return null;
@@ -584,7 +712,9 @@ function updatePredator(
 ): { rescued: boolean } {
   const predator = getPredator(state);
   const victim = getVictim(state);
-  if (predator.lifeState === "disabled") return { rescued: false };
+  if (predator.lifeState === "disabled" || predator.lifeState === "captured") {
+    return { rescued: false };
+  }
   const predatorPen = state.pens.predator;
   const wasInsidePen = predator.insidePen;
   if (wasInsidePen) {
@@ -621,22 +751,10 @@ function updatePredator(
     } else {
       moveAnimal(state, predator, player.x, player.z, P5_TUNING.playerChaseSpeed, deltaSeconds);
     }
-    if (victim?.lifeState === "rescuePending"
-      && distance(predator.x, predator.z, player.x, player.z) <= P5_TUNING.rescueDistance) {
-      victim.lifeState = "active";
-      victim.phase = "idle";
-      victim.rescueSeconds = 0;
-      victim.protectionSeconds = P5_TUNING.rescueProtectionSeconds;
-      victim.rescueCount += 1;
-      victim.tension = 55;
-      state.rescueOverrideUsed = true;
-      recordEvent(state, "rescueSucceeded", victim.id, "player-proximity");
-      rescued = true;
-    }
   } else if (predator.phase === "aim") {
     predator.waitingSeconds += deltaSeconds;
     const target = predator.targetId ? getAnimal(state, predator.targetId) : undefined;
-    if (!target || !targetCanBeAttacked(target)
+    if (!target || !targetCanBeAttacked(state, predator, target)
       || distance(predator.x, predator.z, target.x, target.z) > P5_TUNING.attackDistance) {
       setPredatorSearch(predator);
     } else if (predator.waitingSeconds >= P5_TUNING.attackWarningSeconds) {
@@ -646,7 +764,7 @@ function updatePredator(
     }
   } else if (predator.phase === "lunge") {
     const target = predator.targetId ? getAnimal(state, predator.targetId) : undefined;
-    if (target && targetCanBeAttacked(target)) {
+    if (target && targetCanBeAttacked(state, predator, target)) {
       moveAnimal(state, predator, target.x, target.z, P5_TUNING.lungeSpeed, deltaSeconds);
       if (distance(predator.x, predator.z, target.x, target.z) <= 0.78) {
         if (target.rescueCount > 0) {
@@ -677,7 +795,8 @@ function updatePredator(
     predator.waitingSeconds += deltaSeconds;
     if (predator.waitingSeconds >= P5_TUNING.recoverySeconds) setPredatorSearch(predator);
   } else {
-    const target = victim && targetCanBeAttacked(victim) ? victim : undefined;
+    const target = victim && targetCanBeAttacked(state, predator, victim) ? victim : undefined;
+    if (!target && predator.phase === "chase") setPredatorSearch(predator);
     if (target && distance(predator.x, predator.z, target.x, target.z) <= P5_TUNING.detectionDistance) {
       predator.targetId = target.id;
       predator.phase = "chase";
@@ -686,7 +805,7 @@ function updatePredator(
       moveAnimal(state, predator, target.x, target.z, P5_TUNING.predatorSpeed, deltaSeconds);
     }
     const refreshedTarget = predator.targetId ? getAnimal(state, predator.targetId) : undefined;
-    if (refreshedTarget && targetCanBeAttacked(refreshedTarget)) {
+    if (refreshedTarget && targetCanBeAttacked(state, predator, refreshedTarget)) {
       const targetDistance = distance(predator.x, predator.z, refreshedTarget.x, refreshedTarget.z);
       if (targetDistance <= P5_TUNING.attackDistance) {
         predator.phase = "aim";
@@ -695,7 +814,23 @@ function updatePredator(
       } else if (predator.phase === "chase") {
         moveAnimal(state, predator, refreshedTarget.x, refreshedTarget.z, P5_TUNING.predatorSpeed, deltaSeconds);
       }
+    } else if (predator.phase === "chase") {
+      setPredatorSearch(predator);
     }
+  }
+
+  if (victim?.lifeState === "rescuePending"
+    && !state.rescueOverrideUsed
+    && distance(predator.x, predator.z, player.x, player.z) <= P5_TUNING.rescueDistance) {
+    victim.lifeState = "active";
+    victim.phase = "idle";
+    victim.rescueSeconds = 0;
+    victim.protectionSeconds = P5_TUNING.rescueProtectionSeconds;
+    victim.rescueCount += 1;
+    victim.tension = 55;
+    state.rescueOverrideUsed = true;
+    recordEvent(state, "rescueSucceeded", victim.id, "player-proximity");
+    rescued = true;
   }
 
   predator.insidePen = isInsidePen(predator, predatorPen);
@@ -706,7 +841,7 @@ function updatePredator(
     predator.captureHoldSeconds += deltaSeconds;
     if (playerOutsidePen(player, predatorPen)
       && predator.captureHoldSeconds >= P5_TUNING.captureHoldSeconds) {
-      predator.lifeState = "disabled";
+      predator.lifeState = "captured";
       predator.phase = "disabled";
       recordEvent(state, "predatorCaptured", predator.id, "player-left-predator-pen");
     }
@@ -721,7 +856,7 @@ function updateCompletion(state: P5SimulationState): void {
   const preyCaptured = state.animals
     .filter((animal) => animal.type !== "predator")
     .every((animal) => animal.lifeState === "captured");
-  const predatorCaptured = getPredator(state).lifeState === "disabled";
+  const predatorCaptured = getPredator(state).lifeState === "captured";
   if (preyCaptured && predatorCaptured) state.status = "completed";
 }
 
@@ -743,6 +878,7 @@ export function stepP5Simulation(
     || !finite(player.x) || !finite(player.z) || !finite(player.speed)) return emptyResult;
 
   for (const animal of state.animals) {
+    if (animal.lifeState === "captured" || animal.lifeState === "disabled") continue;
     animal.previousX = animal.x;
     animal.previousZ = animal.z;
   }
@@ -751,7 +887,7 @@ export function stepP5Simulation(
   state.threatCooldownSeconds = Math.max(0, state.threatCooldownSeconds - deltaSeconds);
   state.threatResistanceSeconds = Math.max(0, state.threatResistanceSeconds - deltaSeconds);
 
-  const routeDiscovered = updateRouteDiscovery(state, player);
+  let routeDiscovered: P5Route | null = null;
   const guidanceAccepted = applyGuidanceSignal(state, player);
   const threat = applyThreatSignal(state, player);
   const capturedIds: string[] = [];
@@ -763,6 +899,7 @@ export function stepP5Simulation(
       if (captured) capturedIds.push(captured);
     }
     const predatorResult = updatePredator(state, player, deltaSeconds);
+    routeDiscovered = updateRouteDiscovery(state);
     updateCompletion(state);
     return {
       status: state.status,
