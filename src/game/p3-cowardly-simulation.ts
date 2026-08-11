@@ -130,6 +130,7 @@ const INITIAL_ANIMALS: readonly P2PlayerPosition[] = [
 
 const EPSILON = 1e-7;
 const RAIL_SEPARATION = 1e-4;
+const SPACING_MARGIN = 0.01;
 
 function finiteOr(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
@@ -710,6 +711,7 @@ function applyAnimalSpacing(state: P3SimulationState): void {
     animal.phase !== "captured"
       && animal.phase !== "idle"
       && animal.phase !== "anticipating";
+  const targetSeparation = P3_TUNING.minimumAnimalSeparation + SPACING_MARGIN;
 
   for (let pass = 0; pass < 10; pass += 1) {
     let adjusted = false;
@@ -722,9 +724,9 @@ function applyAnimalSpacing(state: P3SimulationState): void {
         const dx = second.x - first.x;
         const dz = second.z - first.z;
         const distance = magnitude(dx, dz);
-        if (distance >= P3_TUNING.minimumAnimalSeparation - 1e-4) continue;
+        if (distance >= targetSeparation - 1e-4) continue;
         const direction = normalized(dx, dz);
-        const correction = P3_TUNING.minimumAnimalSeparation - distance;
+        const correction = targetSeparation - distance;
         if (first.phase === "enteringPen") {
           second.x += direction.x * correction;
           second.z += direction.z * correction;
