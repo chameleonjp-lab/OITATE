@@ -1513,13 +1513,11 @@ function runP5RouteDiscovery(): void {
   safeAnimal.z = 0;
   safeAnimal.previousX = safeAnimal.x;
   safeAnimal.previousZ = safeAnimal.z;
-  safeAnimal.phase = "idle";
   stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
   fastAnimal.x = 0;
   fastAnimal.z = 0;
   fastAnimal.previousX = fastAnimal.x;
   fastAnimal.previousZ = fastAnimal.z;
-  fastAnimal.phase = "idle";
   stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
   paused = true;
   clearSimulationDebt();
@@ -1534,24 +1532,22 @@ function runP5CompletionReplay(): void {
   safeAnimal.z = 0;
   safeAnimal.previousX = safeAnimal.x;
   safeAnimal.previousZ = safeAnimal.z;
-  safeAnimal.phase = "idle";
   stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
   fastAnimal.x = 0;
   fastAnimal.z = 0;
   fastAnimal.previousX = fastAnimal.x;
   fastAnimal.previousZ = fastAnimal.z;
-  fastAnimal.phase = "idle";
   stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
   const predator = p5Simulation.animals.find((animal) => animal.type === "predator");
   if (!predator) throw new Error("P5 completion fixture is incomplete");
-  predator.x = p5Simulation.pens.predator.centerX;
-  predator.z = p5Simulation.pens.predator.centerZ;
+  const predatorPen = p5Simulation.pens.predator;
+  predator.x = predatorPen.centerX;
+  predator.z = predatorPen.entranceZ + 0.3;
   predator.previousX = predator.x;
   predator.previousZ = predator.z;
-  predator.insidePen = true;
-  predator.phase = "recovery";
-  for (let step = 0; step < 20 && p5Simulation.status === "active"; step += 1) {
-    stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
+  p5PendingThreatSignal = true;
+  for (let step = 0; step < 60 && !predator.insidePen; step += 1) {
+    stepP5DecisionAtPlayer(predatorPen.centerX, predatorPen.centerZ, 0, false, P5_DECISION_SECONDS);
   }
   for (const animal of p5Simulation.animals.filter((candidate) => candidate.type !== "predator")) {
     const pen = p5Simulation.pens[animal.type];
@@ -1559,11 +1555,6 @@ function runP5CompletionReplay(): void {
     animal.z = pen.entranceZ - 0.3;
     animal.previousX = animal.x;
     animal.previousZ = animal.z;
-    animal.phase = "enteringPen";
-    animal.lifeState = "active";
-    animal.insidePen = false;
-    animal.captureHoldSeconds = 0;
-    p5Simulation.penReservations[animal.type] = animal.id;
     for (let step = 0; step < 30 && animal.lifeState === "active"; step += 1) {
       stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
     }
@@ -1908,6 +1899,25 @@ function updateDiagnostics(deltaSeconds: number, speed: number): void {
   root.dataset.paused = String(paused);
 }
 
+function constrainP5PlayerMovement(
+  previous: THREE.Vector3,
+  current: THREE.Vector3,
+): { x: number; z: number } {
+  let previousPosition = { x: previous.x, z: previous.z };
+  let currentPosition = { x: current.x, z: current.z };
+  for (const pen of Object.values(p5Simulation.pens)) {
+    currentPosition = constrainCircleAgainstPenRails(
+      previousPosition,
+      currentPosition,
+      pen,
+      PLAYER_COLLISION_RADIUS,
+      true,
+    );
+    previousPosition = currentPosition;
+  }
+  return currentPosition;
+}
+
 function simulate(stepSeconds: number): void {
   previousSimulationPosition.copy(simulationPosition);
   input.update(stepSeconds);
@@ -1932,7 +1942,14 @@ function simulate(stepSeconds: number): void {
       -16.5,
       16.5,
     );
-    if (!p5Mode) {
+    if (p5Mode) {
+      const constrainedPlayer = constrainP5PlayerMovement(
+        previousSimulationPosition,
+        simulationPosition,
+      );
+      simulationPosition.x = constrainedPlayer.x;
+      simulationPosition.z = constrainedPlayer.z;
+    } else {
       const constrainedPlayer = constrainCircleAgainstPenRails(
         previousSimulationPosition,
         simulationPosition,
