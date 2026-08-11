@@ -387,19 +387,32 @@ function resolveAnimalOverlap(state: P5SimulationState, animal: P5AnimalState): 
   }
 }
 
+export function constrainP5CircleAgainstPens(
+  pens: P5SimulationState["pens"],
+  previous: { x: number; z: number },
+  current: { x: number; z: number },
+  radius: number,
+): { x: number; z: number } {
+  const start = { x: previous.x, z: previous.z };
+  let constrained = { x: current.x, z: current.z };
+  for (const pen of Object.values(pens)) {
+    constrained = constrainCircleAgainstPenRails(start, constrained, pen, radius, true);
+  }
+  return constrained;
+}
+
 function constrainAnimalAgainstPens(
   state: P5SimulationState,
   animal: P5AnimalState,
   x: number,
   z: number,
 ): { x: number; z: number } {
-  let previous = { x: animal.x, z: animal.z };
-  let current = { x, z };
-  for (const pen of Object.values(state.pens)) {
-    current = constrainCircleAgainstPenRails(previous, current, pen, animal.radius, true);
-    previous = current;
-  }
-  return current;
+  return constrainP5CircleAgainstPens(
+    state.pens,
+    { x: animal.x, z: animal.z },
+    { x, z },
+    animal.radius,
+  );
 }
 
 function moveAnimal(
