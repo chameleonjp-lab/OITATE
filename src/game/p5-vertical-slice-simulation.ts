@@ -6,7 +6,10 @@
  * loop without making either earlier slice's state mutable from here.
  */
 
-import { isPressureBlockedByPen } from "./p2-cowardly-simulation";
+import {
+  constrainCircleAgainstPenRails,
+  isPressureBlockedByPen,
+} from "./p2-cowardly-simulation";
 
 export type P5AnimalType = "coward" | "follower" | "predator";
 export type P5Route = "safe" | "fast";
@@ -59,6 +62,7 @@ export interface P5AnimalState {
   lifeState: P5LifeState;
   targetId: string | null;
   followingSeconds: number;
+  threatSeconds: number;
   tension: number;
   rescueSeconds: number;
   protectionSeconds: number;
@@ -249,6 +253,7 @@ function createAnimal(
     lifeState: "active",
     targetId: null,
     followingSeconds: 0,
+    threatSeconds: 0,
     tension: 0,
     rescueSeconds: 0,
     protectionSeconds: 0,
@@ -382,6 +387,21 @@ function resolveAnimalOverlap(state: P5SimulationState, animal: P5AnimalState): 
   }
 }
 
+function constrainAnimalAgainstPens(
+  state: P5SimulationState,
+  animal: P5AnimalState,
+  x: number,
+  z: number,
+): { x: number; z: number } {
+  let previous = { x: animal.x, z: animal.z };
+  let current = { x, z };
+  for (const pen of Object.values(state.pens)) {
+    current = constrainCircleAgainstPenRails(previous, current, pen, animal.radius, true);
+    previous = current;
+  }
+  return current;
+}
+
 function moveAnimal(
   state: P5SimulationState,
   animal: P5AnimalState,
@@ -402,33 +422,47 @@ function moveAnimal(
     const escapeX = animal.x <= (state.terrain.water.minX + state.terrain.water.maxX) / 2
       ? state.terrain.water.minX - animal.radius - 0.05
       : state.terrain.water.maxX + animal.radius + 0.05;
-    const escapeDirection = normalized(escapeX - animal.x, 0);
-    const escapeXPosition = animal.x + escapeDirection.x * speed * deltaSeconds;
-    if (isAnimalClearOfPeers(state, animal, escapeXPosition, animal.z)) {
-      animal.x = escapeXPosition;
+    // This branch is a deterministic recovery from an invalid forced
+    // placement; move to the first valid position outside the water rather
+    // than spending every tick inside an unoccupiable cell.
+    const escapeXPosition = escapeX;
+    const constrainedEscape = constrainAnimalAgainstPens(state, animal, escapeXPosition, animal.z);
+    if (isAnimalClearOfPeers(state, animal, constrainedEscape.x, constrainedEscape.z)
+      && canOccupy(state, animal, constrainedEscape.x, constrainedEscape.z)) {
+      animal.x = constrainedEscape.x;
+      animal.z = constrainedEscape.z;
     }
     clampWorld(animal);
     return;
   }
   const nextX = animal.x + direction.x * speed * deltaSeconds;
   const nextZ = animal.z + direction.z * speed * deltaSeconds;
-  if (canOccupy(state, animal, nextX, nextZ)
-    && isAnimalClearOfPeers(state, animal, nextX, nextZ)) {
-    animal.x = nextX;
-    animal.z = nextZ;
-  } else if (canOccupy(state, animal, animal.x, nextZ)
-    && isAnimalClearOfPeers(state, animal, animal.x, nextZ)) {
-    animal.z = nextZ;
-  } else if (canOccupy(state, animal, nextX, animal.z)
-    && isAnimalClearOfPeers(state, animal, nextX, animal.z)) {
-    animal.x = nextX;
+  const constrainedNext = constrainAnimalAgainstPens(state, animal, nextX, nextZ);
+  const constrainedZ = constrainAnimalAgainstPens(state, animal, animal.x, nextZ);
+  const constrainedX = constrainAnimalAgainstPens(state, animal, nextX, animal.z);
+  if (canOccupy(state, animal, constrainedNext.x, constrainedNext.z)
+    && isAnimalClearOfPeers(state, animal, constrainedNext.x, constrainedNext.z)) {
+    animal.x = constrainedNext.x;
+    animal.z = constrainedNext.z;
+  } else if (canOccupy(state, animal, constrainedZ.x, constrainedZ.z)
+    && isAnimalClearOfPeers(state, animal, constrainedZ.x, constrainedZ.z)) {
+    animal.x = constrainedZ.x;
+    animal.z = constrainedZ.z;
+  } else if (canOccupy(state, animal, constrainedX.x, constrainedX.z)
+    && isAnimalClearOfPeers(state, animal, constrainedX.x, constrainedX.z)) {
+    animal.x = constrainedX.x;
+    animal.z = constrainedX.z;
   } else {
     // A deterministic side-step keeps the simulation recoverable at water
     // edges instead of turning a terrain mismatch into a permanent stall.
     const side = animal.x <= 0 ? -1 : 1;
     const sideX = animal.x + side * speed * deltaSeconds;
-    if (canOccupy(state, animal, sideX, animal.z)
-      && isAnimalClearOfPeers(state, animal, sideX, animal.z)) animal.x = sideX;
+    const constrainedSide = constrainAnimalAgainstPens(state, animal, sideX, animal.z);
+    if (canOccupy(state, animal, constrainedSide.x, constrainedSide.z)
+      && isAnimalClearOfPeers(state, animal, constrainedSide.x, constrainedSide.z)) {
+      animal.x = constrainedSide.x;
+      animal.z = constrainedSide.z;
+    }
     else animal.lastMoveX = 0, animal.lastMoveZ = 0;
   }
   clampWorld(animal);
@@ -493,6 +527,7 @@ function setPredatorSearch(predator: P5AnimalState): void {
   predator.phase = "search";
   predator.targetId = null;
   predator.followingSeconds = 0;
+  predator.threatSeconds = 0;
   predator.captureHoldSeconds = 0;
 }
 
@@ -500,6 +535,7 @@ function setPredatorRecovery(predator: P5AnimalState): void {
   predator.phase = "recovery";
   predator.targetId = null;
   predator.waitingSeconds = 0;
+  predator.threatSeconds = 0;
 }
 
 function canSeeTarget(
@@ -512,6 +548,23 @@ function canSeeTarget(
   return !Object.values(state.pens).some((pen) => isPressureBlockedByPen(from, to, pen));
 }
 
+function canTraverseToTarget(
+  state: P5SimulationState,
+  predator: P5AnimalState,
+  target: P5AnimalState,
+): boolean {
+  if (!canSeeTarget(state, predator, target)) return false;
+  const length = distance(predator.x, predator.z, target.x, target.z);
+  const sampleCount = Math.max(1, Math.ceil(length / 0.5));
+  for (let sample = 1; sample <= sampleCount; sample += 1) {
+    const progress = sample / sampleCount;
+    const x = predator.x + (target.x - predator.x) * progress;
+    const z = predator.z + (target.z - predator.z) * progress;
+    if (!canOccupy(state, predator, x, z)) return false;
+  }
+  return true;
+}
+
 function targetCanBeAttacked(
   state: P5SimulationState,
   predator: P5AnimalState,
@@ -519,7 +572,8 @@ function targetCanBeAttacked(
 ): boolean {
   return target.lifeState === "active"
     && target.protectionSeconds <= EPSILON
-    && canSeeTarget(state, predator, target);
+    && !Object.values(state.pens).some((pen) => isInsidePen(target, pen))
+    && canTraverseToTarget(state, predator, target);
 }
 
 function applyThreatSignal(
@@ -544,7 +598,7 @@ function applyThreatSignal(
   state.threatCooldownSeconds = P5_TUNING.threatCooldownSeconds;
   predator.phase = "chasePlayer";
   predator.targetId = null;
-  predator.followingSeconds = P5_TUNING.threatDurationSeconds;
+  predator.threatSeconds = P5_TUNING.threatDurationSeconds;
   recordEvent(state, "predatorThreatAccepted", predator.id, rescueOverride ? "rescue-override" : "normal-threat");
 
   const victim = getVictim(state);
@@ -730,9 +784,10 @@ function updatePredator(
     );
   }
   predator.protectionSeconds = Math.max(0, predator.protectionSeconds - deltaSeconds);
+  predator.threatSeconds = Math.max(0, predator.threatSeconds - deltaSeconds);
   if (victim?.lifeState === "rescuePending") {
     victim.rescueSeconds += deltaSeconds;
-    if (victim.rescueSeconds >= P5_TUNING.rescueDeadlineSeconds) {
+    if (victim.rescueSeconds >= P5_TUNING.rescueDeadlineSeconds - EPSILON) {
       state.status = "failed";
       state.failureReason = "rescueTimeout";
       predator.lifeState = "disabled";
@@ -744,7 +799,9 @@ function updatePredator(
 
   let rescued = false;
   if (!wasInsidePen && predator.phase === "chasePlayer") {
-    if (distance(predator.x, predator.z, player.x, player.z) <= 0.78) {
+    if (predator.threatSeconds <= EPSILON) {
+      setPredatorSearch(predator);
+    } else if (distance(predator.x, predator.z, player.x, player.z) <= 0.78) {
       predator.followingSeconds = 0;
       state.threatResistanceSeconds = P5_TUNING.threatResistanceSeconds;
       setPredatorRecovery(predator);
@@ -840,6 +897,7 @@ function updatePredator(
     }
     predator.captureHoldSeconds += deltaSeconds;
     if (playerOutsidePen(player, predatorPen)
+      && victim?.lifeState !== "rescuePending"
       && predator.captureHoldSeconds >= P5_TUNING.captureHoldSeconds) {
       predator.lifeState = "captured";
       predator.phase = "disabled";
