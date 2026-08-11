@@ -33,6 +33,7 @@ import {
 } from "./game/p4-danger-simulation";
 import {
   createP5Simulation,
+  constrainP5CircleAgainstPens,
   P5_TUNING,
   stepP5Simulation,
   type P5AnimalPhase,
@@ -1903,19 +1904,12 @@ function constrainP5PlayerMovement(
   previous: THREE.Vector3,
   current: THREE.Vector3,
 ): { x: number; z: number } {
-  let previousPosition = { x: previous.x, z: previous.z };
-  let currentPosition = { x: current.x, z: current.z };
-  for (const pen of Object.values(p5Simulation.pens)) {
-    currentPosition = constrainCircleAgainstPenRails(
-      previousPosition,
-      currentPosition,
-      pen,
-      PLAYER_COLLISION_RADIUS,
-      true,
-    );
-    previousPosition = currentPosition;
-  }
-  return currentPosition;
+  return constrainP5CircleAgainstPens(
+    p5Simulation.pens,
+    { x: previous.x, z: previous.z },
+    { x: current.x, z: current.z },
+    PLAYER_COLLISION_RADIUS,
+  );
 }
 
 function simulate(stepSeconds: number): void {
