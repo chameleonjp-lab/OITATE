@@ -10,6 +10,10 @@ async function getP2State(page: Page): Promise<P2State> {
   return (await getP1State(page)).p2;
 }
 
+async function getP3State(page: Page): Promise<P2State> {
+  return (await getP1State(page)).p3;
+}
+
 function observableP2State(state: P2State) {
   return {
     capturedCount: state.capturedCount,
@@ -29,7 +33,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator("#app")).toHaveAttribute("data-ready", "true");
 });
 
-test("keeps the normal screen focused on P2 and makes P1 signals inert", async ({ page }) => {
+test("keeps the normal screen focused on P3 and makes P1 signals inert", async ({ page }) => {
   await expect(page.locator(".p1-eyebrow")).toBeHidden();
   await expect(page.locator(".p2-eyebrow")).toBeVisible();
   await expect(page.getByTestId("p2-status")).toContainText("動物の反応を観察する");
@@ -37,9 +41,10 @@ test("keeps the normal screen focused on P2 and makes P1 signals inert", async (
   await expect(page.getByTestId("diagnostics")).toBeHidden();
   await expect(page.locator("#app")).toHaveAttribute(
     "data-p2-world-entities",
-    "player,coward-1,coward-2,coward-3,pen",
+    "player,coward-1,coward-2,coward-3,coward-4,coward-5,coward-6,pen",
   );
   expect(await page.evaluate(() => typeof window.__OITATE_P2__?.e2e)).toBe("undefined");
+  expect((await getP3State(page)).animals).toHaveLength(6);
 
   const before = await getP1State(page);
   await page.keyboard.press("KeyQ");
@@ -67,7 +72,7 @@ test("keeps the P1 input probe behind an explicit development query", async ({ p
   const after = await getP1State(page);
   expect(after.signalFireCount).toBe(before.signalFireCount + 2);
   expect(observableP2State(after.p2)).toEqual(observableP2State(before.p2));
-  await expect(page.locator("#signal-feedback")).toContainText("P2では動物に効果なし");
+  await expect(page.locator("#signal-feedback")).toContainText("P3では動物に効果なし");
 });
 
 test("shows a readable anticipating phase before a coward flees", async ({ page }) => {
@@ -103,10 +108,10 @@ test("shows a readable anticipating phase before a coward flees", async ({ page 
   expect(middleAfter?.z).toBeLessThan(middleBefore?.z ?? Number.POSITIVE_INFINITY);
 });
 
-test("replays completion through the P2-only hook and retries to a clean state", async ({ page }) => {
-  await page.goto("/?p2-e2e=1");
+test("replays completion through the P3 hook and retries to a clean state", async ({ page }) => {
+  await page.goto("/?p3-e2e=1");
   await expect(page.locator("#app")).toHaveAttribute("data-ready", "true");
-  expect(await page.evaluate(() => typeof window.__OITATE_P2__?.e2e)).toBe("object");
+  expect(await page.evaluate(() => typeof window.__OITATE_P3__?.e2e)).toBe("object");
   const initial = await getP1State(page);
   const initialAnimalPositions = initial.p2.animals.map((animal) => ({
     id: animal.id,
@@ -114,10 +119,10 @@ test("replays completion through the P2-only hook and retries to a clean state",
     z: animal.z,
   }));
 
-  await page.evaluate(() => window.__OITATE_P2__?.e2e?.runCompletionReplay());
+  await page.evaluate(() => window.__OITATE_P3__?.e2e?.runCompletionReplay());
   await expect(page.locator("#p2-complete-overlay")).toBeVisible();
   const completed = await getP1State(page);
-  expect(completed.p2.capturedCount).toBe(3);
+  expect(completed.p2.capturedCount).toBe(6);
   expect(completed.p2.completed).toBe(true);
   expect(completed.p2.penReservedAnimalId).toBeNull();
   expect(completed.p2.decisionUpdates).toBeGreaterThan(0);
@@ -133,7 +138,7 @@ test("replays completion through the P2-only hook and retries to a clean state",
     return window.__OITATE_P1__.getState();
   });
   await expect(page.locator("#p2-complete-overlay")).toBeHidden();
-  await expect(page.locator("#p2-count-text")).toHaveText("収容 0 / 3");
+  await expect(page.locator("#p2-count-text")).toHaveText("収容 0 / 6");
   const reset = resetAtClick;
   expect(reset.player).toEqual({ x: 0, z: 4.5, speed: 0 });
   expect(reset.p2.animals.map((animal) => ({ id: animal.id, x: animal.x, z: animal.z })))
@@ -146,17 +151,17 @@ test("replays completion through the P2-only hook and retries to a clean state",
   expect(reset.p2.animals.every((animal) => !animal.fullBodyInside)).toBe(true);
 });
 
-test("keeps one entrance reservation while a non-overlapping three-animal queue waits", async ({ page }) => {
-  await page.goto("/?p2-e2e=1");
+test("keeps one entrance reservation while a non-overlapping six-animal queue waits", async ({ page }) => {
+  await page.goto("/?p3-e2e=1");
   await expect(page.locator("#app")).toHaveAttribute("data-ready", "true");
 
   const probe = await page.evaluate(() => {
-    const hook = window.__OITATE_P2__?.e2e;
-    if (!hook) throw new Error("P2 E2E hook is not available");
+    const hook = window.__OITATE_P3__?.e2e;
+    if (!hook) throw new Error("P3 E2E hook is not available");
     return hook.probeEntranceQueue();
   });
   expect(probe.decisionStepSeconds).toBe(0.05);
-  expect(probe.initialCandidates).toHaveLength(3);
+  expect(probe.initialCandidates).toHaveLength(6);
   expect(probe.initialCandidates.every((candidate) =>
     Math.abs(candidate.x) < probe.entranceClearance
       && candidate.z > probe.outerFaceZ
@@ -171,7 +176,7 @@ test("keeps one entrance reservation while a non-overlapping three-animal queue 
       .toBeGreaterThanOrEqual(probe.minimumAnimalSeparation - 1e-6);
   }
   expect(probe.initialCandidates.map((candidate) => candidate.id))
-    .toEqual(["coward-1", "coward-2", "coward-3"]);
+    .toEqual(["coward-1", "coward-2", "coward-3", "coward-4", "coward-5", "coward-6"]);
   expect(probe.firstStepReservedAnimalId).toBeTruthy();
   const firstStepOwner = probe.firstStepAnimals.find(
     (animal) => animal.id === probe.firstStepReservedAnimalId,
@@ -181,9 +186,10 @@ test("keeps one entrance reservation while a non-overlapping three-animal queue 
   const firstStepFollowers = probe.firstStepAnimals.filter(
     (animal) => animal.id !== probe.firstStepReservedAnimalId,
   );
-  expect(firstStepFollowers).toHaveLength(2);
+  expect(firstStepFollowers).toHaveLength(5);
   expect(firstStepFollowers.every((animal) =>
-    animal.phase === "fleeing" && animal.z >= probe.outerFaceZ,
+    ["fleeing", "waitingForEntrance"].includes(animal.phase)
+      && animal.z >= probe.outerFaceZ,
   )).toBe(true);
   for (let firstIndex = 0; firstIndex < probe.firstStepAnimals.length; firstIndex += 1) {
     for (let secondIndex = firstIndex + 1; secondIndex < probe.firstStepAnimals.length; secondIndex += 1) {
@@ -203,7 +209,7 @@ test("keeps one entrance reservation while a non-overlapping three-animal queue 
   expect(state.penReservedAnimalId).toBe(probe.reservedAnimalId);
   expect(state.animals.filter((animal) => animal.phase === "enteringPen")).toHaveLength(1);
   const followers = state.animals.filter((animal) => animal.id !== probe.reservedAnimalId);
-  expect(followers).toHaveLength(2);
+  expect(followers).toHaveLength(5);
   expect(followers.every((animal) =>
     animal.phase !== "captured" && animal.z > probe.outerFaceZ,
   )).toBe(true);
