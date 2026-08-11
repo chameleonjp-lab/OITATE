@@ -692,11 +692,7 @@ function reconcileEntrance(
 
 function applyFlockCohesion(state: P3SimulationState, deltaSeconds: number): void {
   const active = state.animals.filter((animal) =>
-    animal.phase !== "captured"
-      && animal.phase !== "anticipating"
-      && animal.phase !== "enteringPen"
-      && animal.phase !== "waitingForEntrance"
-      && animal.phase !== "backingOff",
+    animal.phase === "fleeing",
   );
   for (const animal of active) {
     const dx = state.flock.centerX - animal.x;

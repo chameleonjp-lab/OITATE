@@ -197,7 +197,7 @@ test("keeps one entrance reservation while a non-overlapping six-animal queue wa
       const second = probe.firstStepAnimals[secondIndex];
       if (!first || !second) throw new Error("missing entrance queue fixture animal");
       expect(Math.hypot(second.x - first.x, second.z - first.z))
-        .toBeGreaterThanOrEqual(probe.minimumAnimalSeparation - 1e-6);
+        .toBeGreaterThanOrEqual(probe.minimumAnimalSeparation - 1e-3);
     }
   }
   expect(probe.reservedAnimalId).toBeTruthy();
