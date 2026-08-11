@@ -681,3 +681,235 @@ button:focus-visible {
     transition-duration: 1ms !important;
   }
 }
+
+
+.top-actions {
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.p6-eyebrow {
+  margin-top: 2px;
+  color: #ffd16e;
+}
+
+.p6-status {
+  position: absolute;
+  z-index: 6;
+  top: calc(env(safe-area-inset-top) + 14px);
+  left: 50%;
+  display: grid;
+  gap: 3px;
+  min-width: min(440px, 58vw);
+  padding: 9px 14px;
+  border: 1px solid rgb(255 209 110 / 68%);
+  border-radius: 13px;
+  color: #fff7e5;
+  background: rgb(45 28 16 / 86%);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+  backdrop-filter: blur(8px);
+}
+
+.p6-status strong {
+  color: #ffd16e;
+  font-size: 12px;
+}
+
+.p6-status span:last-child,
+.p6-status span:nth-last-child(2) {
+  color: #ffe8b0;
+  font: 700 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.p6-overlay {
+  z-index: 21;
+}
+
+.p6-intro-card,
+.p6-settings-card,
+.p6-result-card {
+  border-color: rgb(255 209 110 / 62%);
+  background: linear-gradient(145deg, rgb(45 28 16 / 97%), rgb(13 31 37 / 97%));
+}
+
+.p6-intro-card {
+  width: min(520px, 94vw);
+}
+
+.p6-intro-steps {
+  display: grid;
+  gap: 8px;
+  margin: 12px auto 18px;
+  text-align: left;
+}
+
+.p6-intro-step {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 12px;
+  color: #f8efd9;
+  background: rgb(0 0 0 / 18%);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.p6-intro-step b {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  color: #302011;
+  background: #ffd16e;
+}
+
+.p6-intro-actions,
+.p6-result-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+}
+
+.text-button {
+  border: 0;
+  padding: 9px 12px;
+  color: #ffe8b0;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.p6-settings-card {
+  width: min(460px, 94vw);
+}
+
+.p6-settings-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+  text-align: left;
+}
+
+.p6-settings-option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 12px;
+  color: #f7f0df;
+  background: rgb(0 0 0 / 18%);
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.p6-settings-option input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #ffd16e;
+}
+
+.p6-settings-note,
+.p6-result-record {
+  color: #ffe8b0 !important;
+  font-size: 12px !important;
+}
+
+.p6-result-card {
+  width: min(560px, 95vw);
+}
+
+.p6-result-score {
+  margin: 2px 0 0 !important;
+  color: #ffd16e !important;
+  font-size: clamp(28px, 6vw, 42px) !important;
+  font-weight: 950;
+  line-height: 1.1 !important;
+}
+
+.p6-result-grade {
+  margin: 4px 0 8px !important;
+  color: #fff7e5 !important;
+  font-size: 16px !important;
+  font-weight: 900;
+}
+
+.p6-result-title-text {
+  margin-bottom: 14px !important;
+  color: #a7f0ce !important;
+  font-weight: 900;
+}
+
+.p6-score-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+  text-align: left;
+}
+
+.p6-score-grid > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 9px 10px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 12px;
+  background: rgb(0 0 0 / 18%);
+}
+
+.p6-score-grid span {
+  color: #ffe8b0;
+  font-size: 11px;
+}
+
+.p6-score-grid b {
+  color: #fff7e5;
+  font: 900 15px/1.1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.p6-score-grid small {
+  grid-column: 1 / -1;
+  color: rgb(255 255 255 / 60%);
+  font-size: 10px;
+}
+
+.p6-result-advice {
+  margin: 12px 0 !important;
+  padding: 10px 12px;
+  border-left: 3px solid #ffd16e;
+  color: #fff1cd !important;
+  background: rgb(0 0 0 / 18%);
+  text-align: left;
+  font-size: 12px !important;
+}
+
+.p6-large-controls .p5-signal-button {
+  width: 92px;
+  height: 92px;
+}
+
+.p6-large-controls .joystick-base {
+  width: 132px;
+  height: 132px;
+}
+
+.p6-large-controls .joystick-knob {
+  width: 58px;
+  height: 58px;
+}
