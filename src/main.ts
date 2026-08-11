@@ -1189,7 +1189,7 @@ function updateP6Settings(): void {
   if (
     p6Mode &&
     p5Simulation.status === "active" &&
-    p5Simulation.elapsedSeconds > 0 &&
+    p5DecisionUpdates > 0 &&
     requestedAssistedMode !== p6Settings.assistedMode
   ) {
     p6AssistToggle.checked = p6Settings.assistedMode;
