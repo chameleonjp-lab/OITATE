@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createP5Simulation,
+  constrainP5CircleAgainstPens,
   P5_TUNING,
   stepP5Simulation,
   type P5AnimalState,
@@ -80,6 +81,25 @@ describe("P5 vertical-slice simulation", () => {
     ).toBe(false);
     expect(follower.route).toBe("fast");
     expect(state.discoveredRoutes.fast).toBe(true);
+  });
+
+  it("sweeps through the follower and predator pen checks from the same start point", () => {
+    const state = createP5Simulation();
+    const constrained = constrainP5CircleAgainstPens(
+      state.pens,
+      { x: 0, z: -10.5 },
+      { x: 14, z: -10.5 },
+      0.52,
+    );
+    expect(constrained.x).toBeLessThan(3.5);
+
+    const entrance = constrainP5CircleAgainstPens(
+      state.pens,
+      { x: 0, z: -7 },
+      { x: 0, z: -11 },
+      0.52,
+    );
+    expect(entrance.z).toBeLessThan(-9.5);
   });
 
   it("records safe and fast route discoveries separately", () => {
