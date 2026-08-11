@@ -167,6 +167,37 @@ h1 {
   font: 700 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.p4-status {
+  position: absolute;
+  z-index: 6;
+  top: calc(env(safe-area-inset-top) + 14px);
+  left: 50%;
+  display: grid;
+  gap: 2px;
+  min-width: min(390px, 50vw);
+  padding: 8px 13px;
+  border: 1px solid rgb(255 160 126 / 64%);
+  border-radius: 13px;
+  color: #fff4e8;
+  background: rgb(40 18 22 / 82%);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+  backdrop-filter: blur(7px);
+}
+
+.p4-status strong {
+  color: #ffbf92;
+  font-size: 12px;
+}
+
+.p4-status span:last-child {
+  color: #ffd9b8;
+  font: 700 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 .camera-zone,
 .joystick-zone {
   position: absolute;
@@ -293,6 +324,57 @@ h1 {
 }
 
 .signal-button.did-fire {
+  animation: signal-fire 340ms ease-out;
+}
+
+.p4-controls {
+  position: absolute;
+  z-index: 7;
+  right: calc(env(safe-area-inset-right) + 22px);
+  bottom: calc(env(safe-area-inset-bottom) + 18px);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.p4-control-note {
+  width: min(220px, 28vw);
+  color: rgb(255 239 222 / 82%);
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: right;
+  text-shadow: 0 2px 8px rgb(0 0 0 / 60%);
+}
+
+.p4-threat-button {
+  display: grid;
+  width: 88px;
+  height: 88px;
+  place-content: center;
+  border: 1px solid rgb(255 242 213 / 72%);
+  border-radius: 50%;
+  color: #35191d;
+  background: radial-gradient(circle at 35% 28%, #fff3b1, #ff9d75 72%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 34%);
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  transition: transform 70ms ease, filter 70ms ease;
+}
+
+.p4-threat-button > span {
+  font-size: 34px;
+  font-weight: 950;
+  line-height: 0.9;
+}
+
+.p4-threat-button small {
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.p4-threat-button.did-fire {
   animation: signal-fire 340ms ease-out;
 }
 
@@ -437,6 +519,27 @@ button:focus-visible {
 
   .p2-status strong {
     font-size: 10px;
+  }
+
+  .p4-status {
+    top: calc(env(safe-area-inset-top) + 8px);
+    min-width: min(350px, 48vw);
+    padding: 5px 8px;
+    font-size: 9px;
+  }
+
+  .p4-status strong {
+    font-size: 10px;
+  }
+
+  .p4-threat-button {
+    width: 70px;
+    height: 70px;
+  }
+
+  .p4-control-note {
+    width: min(180px, 32vw);
+    font-size: 8px;
   }
 }
 
