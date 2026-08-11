@@ -1186,15 +1186,10 @@ p6RetryButton.addEventListener("click", retryP6Prototype);
 
 function updateP6Settings(): void {
   const requestedAssistedMode = p6AssistToggle.checked;
-  if (
-    p6Mode &&
-    p5Simulation.status === "active" &&
-    p5DecisionUpdates > 0 &&
-    requestedAssistedMode !== p6Settings.assistedMode
-  ) {
-    p6AssistToggle.checked = p6Settings.assistedMode;
-    return;
-  }
+  const restartP6Run = p6Mode
+    && p5Simulation.status === "active"
+    && p5DecisionUpdates > 0
+    && requestedAssistedMode !== p6Settings.assistedMode;
 
   p6Settings = {
     soundEnabled: p6SoundToggle.checked,
@@ -1203,7 +1198,11 @@ function updateP6Settings(): void {
     largeControls: p6LargeControlsToggle.checked,
   };
   writeP6Settings(p6Settings);
-  p6Metrics.assistedMode = p6Settings.assistedMode;
+  if (restartP6Run) {
+    resetP5Prototype();
+  } else {
+    p6Metrics.assistedMode = p6Settings.assistedMode;
+  }
   syncP6SettingsControls();
   updateP6Status();
 }
