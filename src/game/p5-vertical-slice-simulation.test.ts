@@ -26,6 +26,10 @@ function getAnimal(state: P5SimulationState, id: string): P5AnimalState {
   return animal;
 }
 
+function distanceBetween(first: P5AnimalState, second: P5AnimalState): number {
+  return Math.hypot(first.x - second.x, first.z - second.z);
+}
+
 function primeAim(state: P5SimulationState): P5AnimalState {
   const victim = getAnimal(state, "coward-1");
   const predator = getAnimal(state, "predator-1");
@@ -81,12 +85,102 @@ describe("P5 vertical-slice simulation", () => {
   it("records safe and fast route discoveries separately", () => {
     const state = createP5Simulation();
     tick(state, { x: -5.2, z: 0 });
+    expect(state.discoveredRoutes.safe).toBe(false);
+
+    const coward = getAnimal(state, "coward-1");
+    coward.x = -5.2;
+    coward.z = 0;
+    coward.previousX = coward.x;
+    coward.previousZ = coward.z;
+    coward.phase = "idle";
+    tick(state, { x: 10, z: 10 });
     expect(state.discoveredRoutes.safe).toBe(true);
     expect(state.discoveredRoutes.fast).toBe(false);
 
-    tick(state, { x: 0, z: 0 });
+    const follower = getAnimal(state, "follower-1");
+    follower.x = 0;
+    follower.z = 0;
+    follower.previousX = follower.x;
+    follower.previousZ = follower.z;
+    follower.phase = "idle";
+    tick(state, { x: 10, z: 10 });
     expect(state.discoveredRoutes.fast).toBe(true);
     expect(state.events.filter((event) => event.type === "routeDiscovered")).toHaveLength(2);
+  });
+
+  it("does not auto-route or auto-capture prey without the required signals", () => {
+    const state = createP5Simulation();
+    const predator = getAnimal(state, "predator-1");
+    predator.lifeState = "captured";
+    predator.phase = "disabled";
+    predator.insidePen = true;
+    const before = state.animals
+      .filter((animal) => animal.type !== "predator")
+      .map((animal) => ({ id: animal.id, x: animal.x, z: animal.z }));
+
+    for (let step = 0; step < 300; step += 1) tick(state, { x: 10, z: 10 });
+
+    expect(state.animals.filter(
+      (animal) => animal.type !== "predator" && animal.lifeState === "captured",
+    )).toHaveLength(0);
+    expect(state.discoveredRoutes).toEqual({ safe: false, fast: false });
+    expect(state.animals
+      .filter((animal) => animal.type !== "predator")
+      .map((animal) => ({ id: animal.id, x: animal.x, z: animal.z }))).toEqual(before);
+  });
+
+  it("enforces group separation and reserves one entrance at a time", () => {
+    const state = createP5Simulation();
+    const firstFollower = getAnimal(state, "follower-1");
+    const secondFollower = getAnimal(state, "follower-2");
+    firstFollower.x = 0;
+    firstFollower.z = 0;
+    secondFollower.x = 0.8;
+    secondFollower.z = 0;
+    tick(state, { x: 0, z: 0, guidanceSignal: true });
+    expect(distanceBetween(firstFollower, secondFollower)).toBeGreaterThanOrEqual(
+      P5_TUNING.minimumAnimalSeparation - 0.001,
+    );
+
+    const firstCoward = getAnimal(state, "coward-1");
+    const secondCoward = getAnimal(state, "coward-2");
+    const pen = state.pens.coward;
+    for (const [index, animal] of [firstCoward, secondCoward].entries()) {
+      animal.x = pen.centerX + (index === 0 ? -0.7 : 0.7);
+      animal.z = pen.entranceZ - 0.3;
+      animal.previousX = animal.x;
+      animal.previousZ = animal.z;
+      animal.phase = "idle";
+    }
+    tick(state, { x: 10, z: 10 });
+    expect([firstCoward.phase, secondCoward.phase].sort()).toEqual([
+      "enteringPen",
+      "waitingForPen",
+    ]);
+  });
+
+  it("captures active prey through the reserved entrance instead of direct state writes", () => {
+    const state = createP5Simulation();
+    const predator = getAnimal(state, "predator-1");
+    predator.lifeState = "captured";
+    predator.phase = "disabled";
+    predator.insidePen = true;
+
+    for (const animal of state.animals.filter((candidate) => candidate.type !== "predator")) {
+      const pen = state.pens[animal.type];
+      animal.x = pen.centerX;
+      animal.z = pen.entranceZ - 0.3;
+      animal.previousX = animal.x;
+      animal.previousZ = animal.z;
+      animal.phase = "enteringPen";
+      state.penReservations[animal.type] = animal.id;
+      for (let step = 0; step < 30 && animal.lifeState === "active"; step += 1) {
+        tick(state, { x: 10, z: 10 });
+      }
+      expect(animal.lifeState).toBe("captured");
+    }
+
+    expect(state.status).toBe("completed");
   });
 
   it("keeps the predator in aim until the full warning duration", () => {
@@ -173,8 +267,78 @@ describe("P5 vertical-slice simulation", () => {
     for (let step = 0; step < 12 && state.status === "active"; step += 1) {
       tick(state, { x: 10, z: 10 });
     }
-    expect(predator.lifeState).toBe("disabled");
+    expect(predator.lifeState).toBe("captured");
     expect(state.status).toBe("completed");
+  });
+
+  it("blocks attacks through a closed pen rail", () => {
+    const state = createP5Simulation();
+    const victim = getAnimal(state, "coward-1");
+    const predator = getAnimal(state, "predator-1");
+    predator.x = 1.5;
+    predator.z = -7;
+    predator.previousX = predator.x;
+    predator.previousZ = predator.z;
+    victim.x = 1.5;
+    victim.z = state.pens.predator.centerZ;
+    victim.previousX = victim.x;
+    victim.previousZ = victim.z;
+    tick(state, { x: 10, z: 10 });
+    expect(predator.phase).toBe("search");
+    expect(state.events.some((event) => event.type === "predatorAimStarted")).toBe(false);
+  });
+
+  it("rescues a pending victim when the player reaches the danger", () => {
+    const state = createP5Simulation();
+    const victim = getAnimal(state, "coward-1");
+    const predator = getAnimal(state, "predator-1");
+    victim.lifeState = "rescuePending";
+    victim.phase = "rescuePending";
+    victim.rescueSeconds = 1;
+    predator.phase = "recovery";
+    predator.x = 0;
+    predator.z = 0;
+    const result = tick(state, { x: 0, z: 0 });
+    expect(result.rescued).toBe(true);
+    expect(victim.lifeState).toBe("active");
+    expect(victim.rescueCount).toBe(1);
+  });
+
+  it("fails on a valid repeated attack after rescue", () => {
+    const state = createP5Simulation();
+    const victim = getAnimal(state, "coward-1");
+    const predator = getAnimal(state, "predator-1");
+    victim.rescueCount = 1;
+    victim.x = 0;
+    victim.z = 0;
+    predator.x = 0;
+    predator.z = -0.5;
+    predator.previousX = predator.x;
+    predator.previousZ = predator.z;
+    predator.phase = "lunge";
+    predator.targetId = victim.id;
+    tick(state, { x: 10, z: 10 });
+    expect(state.status).toBe("failed");
+    expect(state.failureReason).toBe("repeatedAttack");
+    expect(victim.lifeState).toBe("disabled");
+    expect(predator.lifeState).toBe("disabled");
+  });
+
+  it("freezes captured positions including previous snapshots", () => {
+    const state = createP5Simulation();
+    const captured = getAnimal(state, "coward-1");
+    captured.lifeState = "captured";
+    captured.phase = "captured";
+    captured.x = -8;
+    captured.z = -10;
+    captured.previousX = -7;
+    captured.previousZ = -9;
+    const predator = getAnimal(state, "predator-1");
+    predator.lifeState = "captured";
+    predator.phase = "disabled";
+    const before = structuredClone(captured);
+    tick(state, { x: 0, z: 0 });
+    expect(captured).toEqual(before);
   });
 
   it("does not mutate on invalid time or non-finite input", () => {
