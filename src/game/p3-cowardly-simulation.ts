@@ -706,32 +706,38 @@ function applyFlockCohesion(state: P3SimulationState, deltaSeconds: number): voi
 }
 
 function applyAnimalSpacing(state: P3SimulationState): void {
+  const participatesInSpacing = (animal: P3AnimalState): boolean =>
+    animal.phase !== "captured"
+      && animal.phase !== "idle"
+      && animal.phase !== "anticipating";
+
   for (let pass = 0; pass < 10; pass += 1) {
     let adjusted = false;
     for (let firstIndex = 0; firstIndex < state.animals.length; firstIndex += 1) {
       const first = state.animals[firstIndex];
-      if (!first
-        || first.phase === "captured"
-        || first.phase === "idle"
-        || first.phase === "anticipating"
-        || first.phase === "enteringPen") continue;
+      if (!first || !participatesInSpacing(first)) continue;
       for (let secondIndex = firstIndex + 1; secondIndex < state.animals.length; secondIndex += 1) {
         const second = state.animals[secondIndex];
-        if (!second
-          || second.phase === "captured"
-          || second.phase === "idle"
-          || second.phase === "anticipating"
-          || second.phase === "enteringPen") continue;
+        if (!second || !participatesInSpacing(second)) continue;
         const dx = second.x - first.x;
         const dz = second.z - first.z;
         const distance = magnitude(dx, dz);
         if (distance >= P3_TUNING.minimumAnimalSeparation - 1e-4) continue;
         const direction = normalized(dx, dz);
-        const push = (P3_TUNING.minimumAnimalSeparation - Math.max(distance, 1e-4)) / 2;
-        first.x -= direction.x * push;
-        first.z -= direction.z * push;
-        second.x += direction.x * push;
-        second.z += direction.z * push;
+        const correction = P3_TUNING.minimumAnimalSeparation - distance;
+        if (first.phase === "enteringPen") {
+          second.x += direction.x * correction;
+          second.z += direction.z * correction;
+        } else if (second.phase === "enteringPen") {
+          first.x -= direction.x * correction;
+          first.z -= direction.z * correction;
+        } else {
+          const push = correction / 2;
+          first.x -= direction.x * push;
+          first.z -= direction.z * push;
+          second.x += direction.x * push;
+          second.z += direction.z * push;
+        }
         clampAnimalToWorld(first, state.pen);
         clampAnimalToWorld(second, state.pen);
         adjusted = true;

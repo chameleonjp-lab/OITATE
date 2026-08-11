@@ -141,6 +141,15 @@ describe("P3 cowardly flock simulation", () => {
     expect(state.animals.filter((animal) => animal.phase === "enteringPen")).toHaveLength(1);
     expect(state.animals.filter((animal) => animal.phase === "waitingForEntrance").length)
       .toBeGreaterThanOrEqual(1);
+    for (let firstIndex = 0; firstIndex < state.animals.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < state.animals.length; secondIndex += 1) {
+        const first = state.animals[firstIndex];
+        const second = state.animals[secondIndex];
+        if (!first || !second) throw new Error("missing queue test animal");
+        expect(Math.hypot(second.x - first.x, second.z - first.z))
+          .toBeGreaterThanOrEqual(P3_TUNING.minimumAnimalSeparation - 1e-3);
+      }
+    }
   });
 
   it("backs a waiting animal away after two seconds and counts recovery", () => {
