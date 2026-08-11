@@ -96,7 +96,7 @@ async function setVisibility(page: Page, state: "hidden" | "visible"): Promise<v
 
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 });
-  await page.goto("/");
+  await page.goto("/?p1-probe=1");
   await expect(page.locator("#app")).toHaveAttribute("data-ready", "true");
 });
 
