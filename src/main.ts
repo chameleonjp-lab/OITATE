@@ -388,6 +388,7 @@ root.innerHTML = `
         <p id="p5-result-detail">結果は仮表示です。正式な得点はまだ固定していません。</p>
         <button class="resume-button" type="button" data-action="p5-retry">もう一度試す</button>
       </div>
+    </section>
 
     <section class="blocking-overlay p6-overlay" id="p6-intro-overlay" role="dialog" aria-modal="true" aria-labelledby="p6-intro-title" tabindex="-1" hidden>
       <div class="overlay-card p6-intro-card">
