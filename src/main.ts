@@ -238,6 +238,7 @@ root.innerHTML = `
         <strong>3種類11体を、それぞれの囲いへ</strong>
         <span id="p5-status-text">臆病種は接近、追従種は誘導音、危険種は威嚇音に反応します</span>
         <span id="p5-count-text">臆病 0 / 6　追従 0 / 4　危険 0 / 1</span>
+        <span id="p5-danger-text">危険種：索敵　保護対象：待機中</span>
         <span id="p5-route-text">安全な経路 ○　速い経路 ○</span>
       </section>
 
@@ -373,6 +374,7 @@ const p4RetryButton = required<HTMLButtonElement>("[data-action='p4-retry']");
 const p5Status = required<HTMLElement>(".p5-status");
 const p5StatusText = required<HTMLElement>("#p5-status-text");
 const p5CountText = required<HTMLElement>("#p5-count-text");
+const p5DangerText = required<HTMLElement>("#p5-danger-text");
 const p5RouteText = required<HTMLElement>("#p5-route-text");
 const p5Controls = required<HTMLElement>(".p5-controls");
 const p5GuidanceButton = required<HTMLButtonElement>("#p5-guidance-button");
@@ -1060,6 +1062,7 @@ function resetP5Prototype(): void {
   p5ResultShown = false;
   p5StatusText.textContent = "臆病種は接近、追従種は誘導音、危険種は威嚇音に反応します";
   p5CountText.textContent = "臆病 0 / 6　追従 0 / 4　危険 0 / 1";
+  p5DangerText.textContent = "危険種：索敵　保護対象：待機中";
   p5RouteText.textContent = "安全な経路 ○　速い経路 ○";
   simulationPosition.set(0, 0, 7.5);
   previousSimulationPosition.copy(simulationPosition);
@@ -1141,7 +1144,7 @@ function showP5Result(): void {
     p5ResultText.textContent = p5Simulation.failureReason === "rescueTimeout"
       ? "救助待ちの時間を過ぎました。次は狙いの段階で引きつけます。"
       : "救助後に再び攻撃を許しました。危険種を先に隔離します。";
-    p5ResultDetail.textContent = `収容：臆病 ${counts.coward} / 6　追従 ${counts.follower} / 4。結果は仮表示です。`;
+    p5ResultDetail.textContent = `収容：臆病 ${counts.coward} / 6　追従 ${counts.follower} / 4　危険 ${counts.predator} / 1。発見経路：${routes.safe ? "安全" : "未発見"}・${routes.fast ? "速い" : "未発見"}。失敗理由：${p5Simulation.failureReason}。結果は仮表示です。`;
   }
   p5ResultOverlay.hidden = false;
   blockInteraction(p5RetryButton);
@@ -1480,7 +1483,7 @@ function runP5RescueSuccess(): void {
   predator.waitingSeconds = 0;
   predator.x = 0;
   predator.z = 0;
-  stepP5DecisionAtPlayer(0, 0, 0, false, P5_DECISION_SECONDS);
+  stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
   p5PendingThreatSignal = true;
   stepP5DecisionAtPlayer(0, 0, 0, false, P5_DECISION_SECONDS);
   paused = true;
@@ -1503,21 +1506,42 @@ function runP5RescueFailure(): void {
 
 function runP5RouteDiscovery(): void {
   prepareP5E2EFixture();
-  stepP5DecisionAtPlayer(-5.2, 0, 0, false, P5_DECISION_SECONDS);
-  stepP5DecisionAtPlayer(0, 0, 0, false, P5_DECISION_SECONDS);
+  const safeAnimal = p5Simulation.animals.find((animal) => animal.id === "coward-1");
+  const fastAnimal = p5Simulation.animals.find((animal) => animal.id === "follower-1");
+  if (!safeAnimal || !fastAnimal) throw new Error("P5 route fixture is incomplete");
+  safeAnimal.x = -5.2;
+  safeAnimal.z = 0;
+  safeAnimal.previousX = safeAnimal.x;
+  safeAnimal.previousZ = safeAnimal.z;
+  safeAnimal.phase = "idle";
+  stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
+  fastAnimal.x = 0;
+  fastAnimal.z = 0;
+  fastAnimal.previousX = fastAnimal.x;
+  fastAnimal.previousZ = fastAnimal.z;
+  fastAnimal.phase = "idle";
+  stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
   paused = true;
   clearSimulationDebt();
 }
 
 function runP5CompletionReplay(): void {
   prepareP5E2EFixture();
-  for (const animal of p5Simulation.animals.filter((candidate) => candidate.type !== "predator")) {
-    animal.lifeState = "captured";
-    animal.phase = "captured";
-    animal.insidePen = true;
-  }
-  p5Simulation.discoveredRoutes.safe = true;
-  p5Simulation.discoveredRoutes.fast = true;
+  const safeAnimal = p5Simulation.animals.find((animal) => animal.id === "coward-1");
+  const fastAnimal = p5Simulation.animals.find((animal) => animal.id === "follower-1");
+  if (!safeAnimal || !fastAnimal) throw new Error("P5 completion route fixture is incomplete");
+  safeAnimal.x = -5.2;
+  safeAnimal.z = 0;
+  safeAnimal.previousX = safeAnimal.x;
+  safeAnimal.previousZ = safeAnimal.z;
+  safeAnimal.phase = "idle";
+  stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
+  fastAnimal.x = 0;
+  fastAnimal.z = 0;
+  fastAnimal.previousX = fastAnimal.x;
+  fastAnimal.previousZ = fastAnimal.z;
+  fastAnimal.phase = "idle";
+  stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
   const predator = p5Simulation.animals.find((animal) => animal.type === "predator");
   if (!predator) throw new Error("P5 completion fixture is incomplete");
   predator.x = p5Simulation.pens.predator.centerX;
@@ -1528,6 +1552,21 @@ function runP5CompletionReplay(): void {
   predator.phase = "recovery";
   for (let step = 0; step < 20 && p5Simulation.status === "active"; step += 1) {
     stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
+  }
+  for (const animal of p5Simulation.animals.filter((candidate) => candidate.type !== "predator")) {
+    const pen = p5Simulation.pens[animal.type];
+    animal.x = pen.centerX;
+    animal.z = pen.entranceZ - 0.3;
+    animal.previousX = animal.x;
+    animal.previousZ = animal.z;
+    animal.phase = "enteringPen";
+    animal.lifeState = "active";
+    animal.insidePen = false;
+    animal.captureHoldSeconds = 0;
+    p5Simulation.penReservations[animal.type] = animal.id;
+    for (let step = 0; step < 30 && animal.lifeState === "active"; step += 1) {
+      stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
+    }
   }
   clearSimulationDebt();
 }
@@ -1624,7 +1663,7 @@ function getP5CapturedCounts(): Record<P5AnimalType, number> {
       (animal) => animal.type === "follower" && animal.lifeState === "captured",
     ).length,
     predator: p5Simulation.animals.filter(
-      (animal) => animal.type === "predator" && animal.lifeState === "disabled",
+      (animal) => animal.type === "predator" && animal.lifeState === "captured",
     ).length,
   };
 }
@@ -1635,6 +1674,23 @@ function updateP5Status(): void {
   p5RouteText.textContent = `安全な経路 ${p5Simulation.discoveredRoutes.safe ? "●" : "○"}　速い経路 ${p5Simulation.discoveredRoutes.fast ? "●" : "○"}`;
   const predator = p5Simulation.animals.find((animal) => animal.type === "predator");
   const victim = p5Simulation.animals.find((animal) => animal.id === "coward-1");
+  const predatorLabels: Record<P5AnimalPhase, string> = {
+    idle: "待機",
+    fleeing: "逃走",
+    following: "追従",
+    waitingForPen: "入口待機",
+    enteringPen: "入場中",
+    search: "索敵",
+    chase: "追跡",
+    aim: "狙い",
+    lunge: "飛びかかり",
+    recovery: "回復",
+    chasePlayer: "主人公追跡",
+    rescuePending: "救助待ち",
+    captured: "隔離済み",
+    disabled: "停止",
+  };
+  p5DangerText.textContent = `危険種：${predator ? predatorLabels[predator.phase] : "不明"}　保護対象：${victim?.lifeState ?? "不明"}`;
   if (p5Simulation.status === "completed") {
     p5StatusText.textContent = "3種類11体を、それぞれの囲いへ収容しました";
     return;
