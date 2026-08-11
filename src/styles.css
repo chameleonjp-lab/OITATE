@@ -89,6 +89,11 @@ button {
   color: #a7f0ce;
 }
 
+.p5-eyebrow {
+  margin-top: 2px;
+  color: #b6b8ff;
+}
+
 h1 {
   margin: 0;
   font-size: clamp(14px, 2.2vw, 21px);
@@ -195,6 +200,42 @@ h1 {
 
 .p4-status span:last-child {
   color: #ffd9b8;
+  font: 700 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.p5-status {
+  position: absolute;
+  z-index: 6;
+  top: calc(env(safe-area-inset-top) + 14px);
+  left: 50%;
+  display: grid;
+  gap: 2px;
+  min-width: min(450px, 58vw);
+  padding: 8px 13px;
+  border: 1px solid rgb(182 184 255 / 62%);
+  border-radius: 13px;
+  color: #f5f4ff;
+  background: rgb(20 20 52 / 82%);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+  backdrop-filter: blur(7px);
+}
+
+.p5-status strong {
+  color: #d1d2ff;
+  font-size: 12px;
+}
+
+.p5-status span:nth-child(2) {
+  color: #f1efff;
+}
+
+.p5-status span:last-child,
+.p5-status span:nth-last-child(2) {
+  color: #c9e5ff;
   font: 700 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -378,6 +419,64 @@ h1 {
   animation: signal-fire 340ms ease-out;
 }
 
+.p5-controls {
+  position: absolute;
+  z-index: 7;
+  right: calc(env(safe-area-inset-right) + 22px);
+  bottom: calc(env(safe-area-inset-bottom) + 18px);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.p5-control-note {
+  width: min(235px, 30vw);
+  color: rgb(245 244 255 / 84%);
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: right;
+  text-shadow: 0 2px 8px rgb(0 0 0 / 60%);
+}
+
+.p5-signal-button {
+  display: grid;
+  width: 78px;
+  height: 78px;
+  place-content: center;
+  border: 1px solid rgb(255 255 255 / 65%);
+  border-radius: 50%;
+  color: #17182f;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 34%);
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  transition: transform 70ms ease, filter 70ms ease;
+}
+
+.p5-signal-button.guidance {
+  background: radial-gradient(circle at 35% 28%, #e0e1ff, #9aa2f5 72%);
+}
+
+.p5-signal-button.threat {
+  background: radial-gradient(circle at 35% 28%, #fff3b1, #ff9d75 72%);
+}
+
+.p5-signal-button > span {
+  font-size: 27px;
+  font-weight: 950;
+  line-height: 0.9;
+}
+
+.p5-signal-button small {
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.p5-signal-button.did-fire {
+  animation: signal-fire 340ms ease-out;
+}
+
 @keyframes signal-fire {
   0% { box-shadow: 0 0 0 0 rgb(255 255 255 / 80%); }
   100% { box-shadow: 0 0 0 28px rgb(255 255 255 / 0%); }
@@ -443,6 +542,11 @@ h1 {
   background: rgb(5 18 22 / 88%);
   backdrop-filter: blur(10px);
   touch-action: pinch-zoom;
+}
+
+.p5-result-card {
+  border-color: rgb(182 184 255 / 58%);
+  background: linear-gradient(145deg, rgb(28 29 72 / 96%), rgb(13 28 42 / 96%));
 }
 
 .blocking-overlay[hidden] {
@@ -539,6 +643,31 @@ button:focus-visible {
 
   .p4-control-note {
     width: min(180px, 32vw);
+    font-size: 8px;
+  }
+
+  .p5-status {
+    top: calc(env(safe-area-inset-top) + 8px);
+    min-width: min(390px, 54vw);
+    padding: 5px 8px;
+    font-size: 9px;
+  }
+
+  .p5-status strong {
+    font-size: 10px;
+  }
+
+  .p5-signal-button {
+    width: 66px;
+    height: 66px;
+  }
+
+  .p5-signal-button > span {
+    font-size: 23px;
+  }
+
+  .p5-control-note {
+    width: min(185px, 32vw);
     font-size: 8px;
   }
 }
