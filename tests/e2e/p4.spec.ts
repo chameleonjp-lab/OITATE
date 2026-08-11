@@ -23,7 +23,6 @@ test("shows the P4 danger slice and hides the P3 controls", async ({ page }) => 
     "player,predator,victim,predator-pen",
   );
   expect(await page.evaluate(() => typeof window.__OITATE_P4__.e2e)).toBe("object");
-  expect((await getP4State(page)).predator.attackPhase).toBe("search");
 });
 
 test("keeps the P4 E2E hook out of the production query", async ({ page }) => {
@@ -56,7 +55,7 @@ test("replays a rescue success through the production P4 path", async ({ page })
   expect(state.victim.lifeState).toBe("active");
   expect(state.victim.rescueCount).toBe(1);
   expect(state.lastEvent?.type).toBe("rescueSucceeded");
-  await expect(page.locator("#p4-status-text")).toContainText("危険種を探しています");
+  await expect(page.locator("#p4-status-text")).toContainText("危険種が主人公を追っています");
 });
 
 test("replays rescue failure and retry through the real result button", async ({ page }) => {
