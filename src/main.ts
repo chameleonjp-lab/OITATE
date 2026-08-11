@@ -31,6 +31,15 @@ import {
   type P4SimulationState,
   type P4VictimState,
 } from "./game/p4-danger-simulation";
+import {
+  createP5Simulation,
+  P5_TUNING,
+  stepP5Simulation,
+  type P5AnimalPhase,
+  type P5AnimalType,
+  type P5FailureReason,
+  type P5SimulationState,
+} from "./game/p5-vertical-slice-simulation";
 import { FixedStepSimulation } from "./game/fixed-step";
 import "./styles.css";
 
@@ -135,6 +144,39 @@ interface P4PublicApi {
   e2e?: P4E2ETestHooks;
 }
 
+interface P5PublicState {
+  status: P5SimulationState["status"];
+  failureReason: P5FailureReason;
+  elapsedSeconds: number;
+  capturedCount: Record<P5AnimalType, number>;
+  discoveredRoutes: P5SimulationState["discoveredRoutes"];
+  animals: Array<{
+    id: string;
+    type: P5AnimalType;
+    phase: P5AnimalPhase;
+    lifeState: P5SimulationState["animals"][number]["lifeState"];
+    route: P5SimulationState["animals"][number]["route"];
+    x: number;
+    z: number;
+  }>;
+  eventCount: number;
+  lastEvent: P5SimulationState["events"][number] | null;
+}
+
+interface P5E2ETestHooks {
+  primeAim: () => void;
+  runRescueSuccess: () => void;
+  runRescueFailure: () => void;
+  runRouteDiscovery: () => void;
+  runCompletionReplay: () => void;
+}
+
+interface P5PublicApi {
+  getState: () => P5PublicState;
+  retry: () => void;
+  e2e?: P5E2ETestHooks;
+}
+
 interface P3PublicApi {
   getState: () => P3PublicState;
   retry: () => void;
@@ -153,6 +195,7 @@ declare global {
     __OITATE_P2__: P2PublicApi;
     __OITATE_P3__: P2PublicApi;
     __OITATE_P4__: P4PublicApi;
+    __OITATE_P5__: P5PublicApi;
   }
 }
 
@@ -173,6 +216,7 @@ root.innerHTML = `
         <div>
           <p class="eyebrow p1-eyebrow">P1 操作試作</p>
           <p class="eyebrow p2-eyebrow">P3 最初に遊べる版</p>
+          <p class="eyebrow p5-eyebrow">P5 縦切り統合版</p>
           <h1>臆病種を囲いへ</h1>
         </div>
         <button class="icon-button" type="button" data-action="pause" aria-label="一時停止">Ⅱ</button>
@@ -188,6 +232,13 @@ root.innerHTML = `
         <strong>危険種を専用囲いへ</strong>
         <span id="p4-status-text">危険種を威嚇音で主人公へ引きつけます</span>
         <span id="p4-phase-text">索敵中</span>
+      </section>
+
+      <section class="p5-status" data-testid="p5-status" aria-live="polite" aria-label="P5縦切り統合版の状態" hidden>
+        <strong>3種類11体を、それぞれの囲いへ</strong>
+        <span id="p5-status-text">臆病種は接近、追従種は誘導音、危険種は威嚇音に反応します</span>
+        <span id="p5-count-text">臆病 0 / 6　追従 0 / 4　危険 0 / 1</span>
+        <span id="p5-route-text">安全な経路 ○　速い経路 ○</span>
       </section>
 
       <aside class="diagnostics" data-testid="diagnostics" aria-label="開発用診断">
@@ -231,6 +282,16 @@ root.innerHTML = `
           <span aria-hidden="true">!</span><small>威嚇音</small>
         </button>
       </div>
+
+      <div class="p5-controls" aria-label="P5統合版の合図" hidden>
+        <span class="p5-control-note">臆病種は距離、追従種は誘導音、危険種は威嚇音で動きます</span>
+        <button class="p5-signal-button guidance" id="p5-guidance-button" type="button" aria-keyshortcuts="G">
+          <span aria-hidden="true">♪</span><small>誘導音</small>
+        </button>
+        <button class="p5-signal-button threat" id="p5-threat-button" type="button" aria-keyshortcuts="T">
+          <span aria-hidden="true">!</span><small>威嚇音</small>
+        </button>
+      </div>
     </div>
 
     <section class="blocking-overlay" id="orientation-overlay" role="dialog" aria-modal="true" aria-labelledby="orientation-title" tabindex="-1" hidden>
@@ -264,7 +325,17 @@ root.innerHTML = `
         <p class="eyebrow" id="p4-result-eyebrow">P4 危険検証版</p>
         <h2 id="p4-result-title">危険種を隔離しました</h2>
         <p id="p4-result-text">狙い、威嚇音、専用囲いの順番が成立しました。</p>
-        <button type="button" class="resume-button" data-action="p4-retry">もう一度試す</button>
+      <button type="button" class="resume-button" data-action="p4-retry">もう一度試す</button>
+      </div>
+    </section>
+
+    <section class="blocking-overlay" id="p5-result-overlay" role="dialog" aria-modal="true" aria-labelledby="p5-result-title" tabindex="-1" hidden>
+      <div class="overlay-card p5-result-card">
+        <p class="eyebrow" id="p5-result-eyebrow">P5 縦切り統合版</p>
+        <h2 id="p5-result-title">3種類を収容しました</h2>
+        <p id="p5-result-text">安全な経路と速い経路を使い分けました。</p>
+        <p id="p5-result-detail">結果は仮表示です。正式な得点はまだ固定していません。</p>
+        <button class="resume-button" type="button" data-action="p5-retry">もう一度試す</button>
       </div>
     </section>
   </main>
@@ -299,22 +370,45 @@ const p4ResultEyebrow = required<HTMLElement>("#p4-result-eyebrow");
 const p4ResultTitle = required<HTMLElement>("#p4-result-title");
 const p4ResultText = required<HTMLElement>("#p4-result-text");
 const p4RetryButton = required<HTMLButtonElement>("[data-action='p4-retry']");
+const p5Status = required<HTMLElement>(".p5-status");
+const p5StatusText = required<HTMLElement>("#p5-status-text");
+const p5CountText = required<HTMLElement>("#p5-count-text");
+const p5RouteText = required<HTMLElement>("#p5-route-text");
+const p5Controls = required<HTMLElement>(".p5-controls");
+const p5GuidanceButton = required<HTMLButtonElement>("#p5-guidance-button");
+const p5ThreatButton = required<HTMLButtonElement>("#p5-threat-button");
+const p5ResultOverlay = required<HTMLElement>("#p5-result-overlay");
+const p5ResultEyebrow = required<HTMLElement>("#p5-result-eyebrow");
+const p5ResultTitle = required<HTMLElement>("#p5-result-title");
+const p5ResultText = required<HTMLElement>("#p5-result-text");
+const p5ResultDetail = required<HTMLElement>("#p5-result-detail");
+const p5RetryButton = required<HTMLButtonElement>("[data-action='p5-retry']");
 const signalControls = required<HTMLElement>(".signal-controls");
 const query = new URLSearchParams(window.location.search);
 const p1ProbeEnabled = query.get("p1-probe") === "1";
-const p4Mode = query.get("p4") === "1";
+const p5Mode = query.get("p5") === "1";
+const p4Mode = !p5Mode && query.get("p4") === "1";
 const p3E2EEnabled = import.meta.env.DEV
   && (query.get("p3-e2e") === "1" || query.get("p2-e2e") === "1");
 const p4E2EEnabled = import.meta.env.DEV && p4Mode && query.get("p4-e2e") === "1";
+const p5E2EEnabled = import.meta.env.DEV && p5Mode && query.get("p5-e2e") === "1";
 const debugEnabled = p1ProbeEnabled || query.get("debug") === "1";
 signalControls.hidden = !p1ProbeEnabled;
-p2Status.hidden = p4Mode;
+p2Status.hidden = p4Mode || p5Mode;
 p4Status.hidden = !p4Mode;
 p4Controls.hidden = !p4Mode;
-required<HTMLElement>("h1").textContent = p4Mode ? "危険種を囲いへ" : "臆病種を囲いへ";
+p5Status.hidden = !p5Mode;
+p5Controls.hidden = !p5Mode;
+required<HTMLElement>("h1").textContent = p5Mode
+  ? "3種類を囲いへ"
+  : p4Mode
+    ? "危険種を囲いへ"
+    : "臆病種を囲いへ";
 root.querySelector<HTMLElement>(".p1-eyebrow")?.toggleAttribute("hidden", !p1ProbeEnabled);
-root.querySelector<HTMLElement>(".p2-eyebrow")?.toggleAttribute("hidden", p4Mode);
+root.querySelector<HTMLElement>(".p2-eyebrow")?.toggleAttribute("hidden", p4Mode || p5Mode);
+root.querySelector<HTMLElement>(".p5-eyebrow")?.toggleAttribute("hidden", !p5Mode);
 root.classList.toggle("p4-mode", p4Mode);
+root.classList.toggle("p5-mode", p5Mode);
 const diagnostics = {
   fps: required<HTMLElement>("#diag-fps"),
   frame: required<HTMLElement>("#diag-frame"),
@@ -578,10 +672,110 @@ scene.add(p4PenVisual);
 
 const p4PredatorVisual = createP4ActorVisual(0xe56f61, 0xffb38e, 1.1);
 const p4VictimVisual = createP4ActorVisual(0x7cc9d8, 0x9fe8f0, 0.82);
+
+function createP5PenVisual(
+  pen: P5SimulationState["pens"][P5AnimalType],
+  floorColor: number,
+  railColor: number,
+): THREE.Group {
+  const group = new THREE.Group();
+  const floor = new THREE.Mesh(
+    new THREE.BoxGeometry(pen.halfWidth * 2, 0.12, pen.halfDepth * 2),
+    new THREE.MeshStandardMaterial({
+      color: floorColor,
+      roughness: 0.9,
+      transparent: true,
+      opacity: 0.76,
+    }),
+  );
+  floor.position.set(pen.centerX, 0.06, pen.centerZ);
+  group.add(floor);
+  const railMaterial = new THREE.MeshStandardMaterial({ color: railColor, roughness: 0.82 });
+  const leftX = pen.centerX - pen.halfWidth;
+  const rightX = pen.centerX + pen.halfWidth;
+  const backZ = pen.centerZ - pen.halfDepth;
+  const frontZ = pen.entranceZ;
+  for (const x of [leftX, rightX]) {
+    for (const z of [backZ, frontZ]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 1.5, 8), railMaterial);
+      post.position.set(x, 0.75, z);
+      group.add(post);
+    }
+    const side = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, 0.15, pen.halfDepth * 2),
+      railMaterial,
+    );
+    side.position.set(x, 1.28, pen.centerZ - pen.halfDepth / 2);
+    group.add(side);
+  }
+  const back = new THREE.Mesh(
+    new THREE.BoxGeometry(pen.halfWidth * 2, 0.15, 0.15),
+    railMaterial,
+  );
+  back.position.set(pen.centerX, 1.28, backZ);
+  group.add(back);
+  const railLength = pen.halfWidth - pen.entranceHalfWidth;
+  for (const x of [
+    pen.centerX - (pen.halfWidth + pen.entranceHalfWidth) / 2,
+    pen.centerX + (pen.halfWidth + pen.entranceHalfWidth) / 2,
+  ]) {
+    const front = new THREE.Mesh(new THREE.BoxGeometry(railLength, 0.15, 0.15), railMaterial);
+    front.position.set(x, 1.28, frontZ);
+    group.add(front);
+  }
+  scene.add(group);
+  return group;
+}
+
+const p5TerrainVisual = new THREE.Group();
+const p5Water = new THREE.Mesh(
+  new THREE.PlaneGeometry(
+    P5_TUNING.terrain.water.maxX - P5_TUNING.terrain.water.minX,
+    P5_TUNING.terrain.water.maxZ - P5_TUNING.terrain.water.minZ,
+  ),
+  new THREE.MeshStandardMaterial({ color: 0x3f9fc2, roughness: 0.32, transparent: true, opacity: 0.78 }),
+);
+p5Water.rotation.x = -Math.PI / 2;
+p5Water.position.set(
+  (P5_TUNING.terrain.water.minX + P5_TUNING.terrain.water.maxX) / 2,
+  0.035,
+  (P5_TUNING.terrain.water.minZ + P5_TUNING.terrain.water.maxZ) / 2,
+);
+p5TerrainVisual.add(p5Water);
+const p5Bridge = new THREE.Mesh(
+  new THREE.PlaneGeometry(
+    P5_TUNING.terrain.bridge.maxX - P5_TUNING.terrain.bridge.minX,
+    P5_TUNING.terrain.bridge.maxZ - P5_TUNING.terrain.bridge.minZ,
+  ),
+  new THREE.MeshStandardMaterial({ color: 0xc59b61, roughness: 0.82 }),
+);
+p5Bridge.rotation.x = -Math.PI / 2;
+p5Bridge.position.set(
+  (P5_TUNING.terrain.bridge.minX + P5_TUNING.terrain.bridge.maxX) / 2,
+  0.055,
+  (P5_TUNING.terrain.bridge.minZ + P5_TUNING.terrain.bridge.maxZ) / 2,
+);
+p5TerrainVisual.add(p5Bridge);
+scene.add(p5TerrainVisual);
+
+const p5PenVisuals: Record<P5AnimalType, THREE.Group> = {
+  coward: createP5PenVisual(P5_TUNING.pens.coward, 0x83b86d, 0xb6e48c),
+  follower: createP5PenVisual(P5_TUNING.pens.follower, 0x6c9dcc, 0x9dd6ee),
+  predator: createP5PenVisual(P5_TUNING.pens.predator, 0x9b6e69, 0xf09a7e),
+};
+const p5FollowerVisuals: P4Visual[] = [];
+for (let index = 0; index < P5_TUNING.followerCount; index += 1) {
+  p5FollowerVisuals.push(createP4ActorVisual(0x8c98e8, 0xb6b8ff, 0.9));
+}
+const p5PredatorVisual = createP4ActorVisual(0xe56f61, 0xffb38e, 1.08);
+p5TerrainVisual.visible = p5Mode;
+for (const visual of Object.values(p5PenVisuals)) visual.visible = p5Mode;
 p4PenVisual.visible = p4Mode;
 p4PredatorVisual.group.visible = p4Mode;
 p4VictimVisual.group.visible = p4Mode;
-for (const visual of cowardVisuals) visual.group.visible = !p4Mode;
+for (const visual of cowardVisuals) visual.group.visible = !p4Mode && !p5Mode;
+for (const visual of p5FollowerVisuals) visual.group.visible = p5Mode;
+p5PredatorVisual.group.visible = p5Mode;
 
 let paused = false;
 let portrait = isPortraitViewport();
@@ -605,6 +799,8 @@ let p3Simulation: P3SimulationState = createP3Simulation();
 const P3_DECISION_SECONDS = P3_TUNING.decisionStepSeconds;
 let p4Simulation: P4SimulationState = createP4Simulation();
 const P4_DECISION_SECONDS = P4_TUNING.decisionStepSeconds;
+let p5Simulation: P5SimulationState = createP5Simulation();
+const P5_DECISION_SECONDS = P5_TUNING.decisionStepSeconds;
 const PLAYER_COLLISION_RADIUS = 0.52;
 let p3DecisionAccumulator = 0;
 let p3DecisionUpdates = 0;
@@ -613,9 +809,18 @@ let p4DecisionAccumulator = 0;
 let p4DecisionUpdates = 0;
 let p4PendingThreatSignal = false;
 let p4ResultShown = false;
+let p5DecisionAccumulator = 0;
+let p5DecisionUpdates = 0;
+let p5PendingGuidanceSignal = false;
+let p5PendingThreatSignal = false;
+let p5ResultShown = false;
 let previousFocus: HTMLElement | null = null;
 
-if (p4Mode) {
+if (p5Mode) {
+  simulationPosition.set(0, 0, 7.5);
+  previousSimulationPosition.copy(simulationPosition);
+  player.position.copy(simulationPosition);
+} else if (p4Mode) {
   simulationPosition.set(0, 0, -5.25);
   previousSimulationPosition.copy(simulationPosition);
   player.position.copy(simulationPosition);
@@ -625,9 +830,14 @@ function clearSimulationDebt(): void {
   fixedStep.clearAccumulator();
   p3DecisionAccumulator = 0;
   p4DecisionAccumulator = 0;
+  p5DecisionAccumulator = 0;
   previousSimulationPosition.copy(simulationPosition);
   player.position.copy(simulationPosition);
   for (const animal of p3Simulation.animals) {
+    animal.previousX = animal.x;
+    animal.previousZ = animal.z;
+  }
+  for (const animal of p5Simulation.animals) {
     animal.previousX = animal.x;
     animal.previousZ = animal.z;
   }
@@ -734,6 +944,24 @@ function pulseP4ThreatSignal(): void {
   window.setTimeout(() => feedback.classList.remove("is-visible"), 520);
 }
 
+function pulseP5Signal(signal: "guidance" | "threat"): void {
+  if (!p5Mode || paused || portrait || p5ResultShown) return;
+  if (signal === "guidance") p5PendingGuidanceSignal = true;
+  else p5PendingThreatSignal = true;
+  const button = signal === "guidance" ? p5GuidanceButton : p5ThreatButton;
+  button.classList.remove("did-fire");
+  void button.offsetWidth;
+  button.classList.add("did-fire");
+  feedback.textContent = signal === "guidance"
+    ? "誘導音：追従種が主人公を追います"
+    : "威嚇音：危険種を主人公へ引きつけます";
+  feedback.dataset.signal = signal;
+  feedback.classList.remove("is-visible");
+  void feedback.offsetWidth;
+  feedback.classList.add("is-visible");
+  window.setTimeout(() => feedback.classList.remove("is-visible"), 520);
+}
+
 const input = new InputController(root, {
   onSignalReleased: pulseSignal,
   onInputCleared: () => movement.reset(),
@@ -759,10 +987,20 @@ const input = new InputController(root, {
 });
 
 p4ThreatButton.addEventListener("click", pulseP4ThreatSignal);
+p5GuidanceButton.addEventListener("click", () => pulseP5Signal("guidance"));
+p5ThreatButton.addEventListener("click", () => pulseP5Signal("threat"));
 window.addEventListener("keydown", (event) => {
   if (p4Mode && event.key.toLowerCase() === "t") {
     event.preventDefault();
     pulseP4ThreatSignal();
+  }
+  if (p5Mode && event.key.toLowerCase() === "g") {
+    event.preventDefault();
+    pulseP5Signal("guidance");
+  }
+  if (p5Mode && event.key.toLowerCase() === "t") {
+    event.preventDefault();
+    pulseP5Signal("threat");
   }
 });
 
@@ -807,6 +1045,23 @@ function resetP4Prototype(): void {
   p4StatusText.textContent = "危険種を威嚇音で主人公へ引きつけます";
   p4PhaseText.textContent = "索敵中";
   simulationPosition.set(0, 0, -5.25);
+  previousSimulationPosition.copy(simulationPosition);
+  player.position.copy(simulationPosition);
+  simulationRotationY = 0;
+  clearSimulationDebt();
+}
+
+function resetP5Prototype(): void {
+  p5Simulation = createP5Simulation();
+  p5DecisionAccumulator = 0;
+  p5DecisionUpdates = 0;
+  p5PendingGuidanceSignal = false;
+  p5PendingThreatSignal = false;
+  p5ResultShown = false;
+  p5StatusText.textContent = "臆病種は接近、追従種は誘導音、危険種は威嚇音に反応します";
+  p5CountText.textContent = "臆病 0 / 6　追従 0 / 4　危険 0 / 1";
+  p5RouteText.textContent = "安全な経路 ○　速い経路 ○";
+  simulationPosition.set(0, 0, 7.5);
   previousSimulationPosition.copy(simulationPosition);
   player.position.copy(simulationPosition);
   simulationRotationY = 0;
@@ -866,8 +1121,45 @@ function retryP4Prototype(): void {
   lastFrameTime = performance.now();
 }
 
+function showP5Result(): void {
+  if (p5ResultShown) return;
+  p5ResultShown = true;
+  paused = true;
+  resumeRequired = false;
+  input.clearAllInput("manual-clear");
+  const counts = getP5CapturedCounts();
+  const routes = p5Simulation.discoveredRoutes;
+  p5ResultEyebrow.textContent = p5Simulation.status === "completed"
+    ? "P5 縦切り統合版 完了"
+    : "P5 縦切り統合版 失敗";
+  if (p5Simulation.status === "completed") {
+    p5ResultTitle.textContent = "3種類11体を収容しました";
+    p5ResultText.textContent = `臆病 ${counts.coward} / 6　追従 ${counts.follower} / 4　危険 ${counts.predator} / 1`;
+    p5ResultDetail.textContent = `発見した経路：${routes.safe ? "安全" : "未発見"}・${routes.fast ? "速い" : "未発見"}。結果は仮表示です。`;
+  } else {
+    p5ResultTitle.textContent = "危険種への対応に失敗しました";
+    p5ResultText.textContent = p5Simulation.failureReason === "rescueTimeout"
+      ? "救助待ちの時間を過ぎました。次は狙いの段階で引きつけます。"
+      : "救助後に再び攻撃を許しました。危険種を先に隔離します。";
+    p5ResultDetail.textContent = `収容：臆病 ${counts.coward} / 6　追従 ${counts.follower} / 4。結果は仮表示です。`;
+  }
+  p5ResultOverlay.hidden = false;
+  blockInteraction(p5RetryButton);
+}
+
+function retryP5Prototype(): void {
+  if (!p5ResultShown) return;
+  p5ResultOverlay.hidden = true;
+  resetP5Prototype();
+  paused = false;
+  resumeRequired = false;
+  if (interactionLayer.inert) unblockInteraction();
+  lastFrameTime = performance.now();
+}
+
 p2RetryButton.addEventListener("click", retryP3Prototype);
 p4RetryButton.addEventListener("click", retryP4Prototype);
+p5RetryButton.addEventListener("click", retryP5Prototype);
 
 /**
  * Runs one animal decision through the production P3 simulation. E2E replay
@@ -913,6 +1205,32 @@ function stepP4DecisionAtPlayer(
   p4DecisionUpdates += 1;
   updateP4Status();
   if (decision.status !== "active") showP4Result();
+}
+
+function stepP5DecisionAtPlayer(
+  x: number,
+  z: number,
+  speed: number,
+  isRunning: boolean,
+  deltaSeconds: number,
+): void {
+  const decision = stepP5Simulation(
+    p5Simulation,
+    {
+      x,
+      z,
+      speed,
+      isRunning,
+      guidanceSignal: p5PendingGuidanceSignal,
+      threatSignal: p5PendingThreatSignal,
+    },
+    deltaSeconds,
+  );
+  p5PendingGuidanceSignal = false;
+  p5PendingThreatSignal = false;
+  p5DecisionUpdates += 1;
+  updateP5Status();
+  if (decision.status !== "active") showP5Result();
 }
 
 function prepareP3E2EFixture(): void {
@@ -1126,6 +1444,94 @@ function runP4CaptureReplay(): void {
   clearSimulationDebt();
 }
 
+function prepareP5E2EFixture(): void {
+  p5ResultOverlay.hidden = true;
+  if (interactionLayer.inert) unblockInteraction();
+  resetP5Prototype();
+  input.clearAllInput("manual-clear");
+  paused = false;
+  resumeRequired = false;
+  lastFrameTime = performance.now();
+}
+
+function primeP5Aim(): void {
+  prepareP5E2EFixture();
+  const victim = p5Simulation.animals.find((animal) => animal.id === "coward-1");
+  const predator = p5Simulation.animals.find((animal) => animal.id === "predator-1");
+  if (!victim || !predator) throw new Error("P5 danger fixture is incomplete");
+  predator.x = victim.x;
+  predator.z = victim.z - 1.1;
+  predator.previousX = predator.x;
+  predator.previousZ = predator.z;
+  stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
+  paused = true;
+  clearSimulationDebt();
+}
+
+function runP5RescueSuccess(): void {
+  prepareP5E2EFixture();
+  const victim = p5Simulation.animals.find((animal) => animal.id === "coward-1");
+  const predator = p5Simulation.animals.find((animal) => animal.id === "predator-1");
+  if (!victim || !predator) throw new Error("P5 rescue fixture is incomplete");
+  victim.lifeState = "rescuePending";
+  victim.phase = "rescuePending";
+  victim.rescueSeconds = 1;
+  predator.phase = "recovery";
+  predator.waitingSeconds = 0;
+  predator.x = 0;
+  predator.z = 0;
+  stepP5DecisionAtPlayer(0, 0, 0, false, P5_DECISION_SECONDS);
+  p5PendingThreatSignal = true;
+  stepP5DecisionAtPlayer(0, 0, 0, false, P5_DECISION_SECONDS);
+  paused = true;
+  clearSimulationDebt();
+}
+
+function runP5RescueFailure(): void {
+  prepareP5E2EFixture();
+  const victim = p5Simulation.animals.find((animal) => animal.id === "coward-1");
+  const predator = p5Simulation.animals.find((animal) => animal.id === "predator-1");
+  if (!victim || !predator) throw new Error("P5 failure fixture is incomplete");
+  victim.lifeState = "rescuePending";
+  victim.phase = "rescuePending";
+  victim.rescueSeconds = P5_TUNING.rescueDeadlineSeconds - P5_DECISION_SECONDS;
+  predator.phase = "recovery";
+  predator.waitingSeconds = 0;
+  stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
+  clearSimulationDebt();
+}
+
+function runP5RouteDiscovery(): void {
+  prepareP5E2EFixture();
+  stepP5DecisionAtPlayer(-5.2, 0, 0, false, P5_DECISION_SECONDS);
+  stepP5DecisionAtPlayer(0, 0, 0, false, P5_DECISION_SECONDS);
+  paused = true;
+  clearSimulationDebt();
+}
+
+function runP5CompletionReplay(): void {
+  prepareP5E2EFixture();
+  for (const animal of p5Simulation.animals.filter((candidate) => candidate.type !== "predator")) {
+    animal.lifeState = "captured";
+    animal.phase = "captured";
+    animal.insidePen = true;
+  }
+  p5Simulation.discoveredRoutes.safe = true;
+  p5Simulation.discoveredRoutes.fast = true;
+  const predator = p5Simulation.animals.find((animal) => animal.type === "predator");
+  if (!predator) throw new Error("P5 completion fixture is incomplete");
+  predator.x = p5Simulation.pens.predator.centerX;
+  predator.z = p5Simulation.pens.predator.centerZ;
+  predator.previousX = predator.x;
+  predator.previousZ = predator.z;
+  predator.insidePen = true;
+  predator.phase = "recovery";
+  for (let step = 0; step < 20 && p5Simulation.status === "active"; step += 1) {
+    stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
+  }
+  clearSimulationDebt();
+}
+
 function resize(): void {
   const width = Math.max(1, root.clientWidth);
   const height = Math.max(1, root.clientHeight);
@@ -1209,6 +1615,55 @@ function updateP4Status(): void {
   p4PhaseText.textContent = phaseLabels[predator.attackPhase];
 }
 
+function getP5CapturedCounts(): Record<P5AnimalType, number> {
+  return {
+    coward: p5Simulation.animals.filter(
+      (animal) => animal.type === "coward" && animal.lifeState === "captured",
+    ).length,
+    follower: p5Simulation.animals.filter(
+      (animal) => animal.type === "follower" && animal.lifeState === "captured",
+    ).length,
+    predator: p5Simulation.animals.filter(
+      (animal) => animal.type === "predator" && animal.lifeState === "disabled",
+    ).length,
+  };
+}
+
+function updateP5Status(): void {
+  const counts = getP5CapturedCounts();
+  p5CountText.textContent = `臆病 ${counts.coward} / 6　追従 ${counts.follower} / 4　危険 ${counts.predator} / 1`;
+  p5RouteText.textContent = `安全な経路 ${p5Simulation.discoveredRoutes.safe ? "●" : "○"}　速い経路 ${p5Simulation.discoveredRoutes.fast ? "●" : "○"}`;
+  const predator = p5Simulation.animals.find((animal) => animal.type === "predator");
+  const victim = p5Simulation.animals.find((animal) => animal.id === "coward-1");
+  if (p5Simulation.status === "completed") {
+    p5StatusText.textContent = "3種類11体を、それぞれの囲いへ収容しました";
+    return;
+  }
+  if (p5Simulation.status === "failed") {
+    p5StatusText.textContent = p5Simulation.failureReason === "rescueTimeout"
+      ? "救助待ちの時間を過ぎました"
+      : "救助後に危険種の再攻撃を許しました";
+    return;
+  }
+  if (victim?.lifeState === "rescuePending") {
+    p5StatusText.textContent = `救助待ち：残り ${Math.max(0, P5_TUNING.rescueDeadlineSeconds - victim.rescueSeconds).toFixed(1)}秒`;
+    return;
+  }
+  if (predator?.phase === "aim") {
+    p5StatusText.textContent = "危険種が狙っています。威嚇音で主人公へ引きつけます";
+    return;
+  }
+  if (p5Simulation.animals.some((animal) => animal.phase === "following")) {
+    p5StatusText.textContent = "追従種がついてきています。橋を使うと速く進めます";
+    return;
+  }
+  if (p5Simulation.animals.some((animal) => animal.phase === "fleeing")) {
+    p5StatusText.textContent = "臆病種が反応しています。水場へ押し込まないようにします";
+    return;
+  }
+  p5StatusText.textContent = "臆病種は接近、追従種は誘導音、危険種は威嚇音に反応します";
+}
+
 function updateP3Visuals(interpolationAlpha: number): void {
   for (let index = 0; index < cowardVisuals.length; index += 1) {
     const visual = cowardVisuals[index];
@@ -1277,6 +1732,81 @@ function updateP4Visuals(interpolationAlpha: number): void {
   p4VictimVisual.warningRing.scale.setScalar(pulse);
 }
 
+function updateP5Visuals(interpolationAlpha: number): void {
+  const cowards = p5Simulation.animals.filter((animal) => animal.type === "coward");
+  const followers = p5Simulation.animals.filter((animal) => animal.type === "follower");
+  const predator = p5Simulation.animals.find((animal) => animal.type === "predator");
+  for (let index = 0; index < cowards.length; index += 1) {
+    const visual = cowardVisuals[index];
+    const animal = cowards[index];
+    if (!visual || !animal) continue;
+    visual.group.visible = p5Mode;
+    visual.group.position.set(
+      THREE.MathUtils.lerp(animal.previousX, animal.x, interpolationAlpha),
+      0,
+      THREE.MathUtils.lerp(animal.previousZ, animal.z, interpolationAlpha),
+    );
+    visual.reactionRing.visible = animal.phase === "fleeing"
+      || animal.phase === "rescuePending"
+      || animal.tension >= 55;
+    const ringMaterial = visual.reactionRing.material as THREE.MeshBasicMaterial;
+    ringMaterial.color.set(animal.phase === "rescuePending" ? 0xff6767 : 0xffe085);
+    visual.escapeArrow.visible = debugEnabled && animal.phase === "fleeing";
+    if (Math.hypot(animal.lastMoveX, animal.lastMoveZ) > 0.01) {
+      visual.group.rotation.y = Math.atan2(-animal.lastMoveX, -animal.lastMoveZ);
+      visual.escapeArrow.rotation.y = Math.atan2(animal.lastMoveX, animal.lastMoveZ);
+    }
+  }
+  for (let index = 0; index < followers.length; index += 1) {
+    const visual = p5FollowerVisuals[index];
+    const animal = followers[index];
+    if (!visual || !animal) continue;
+    visual.group.visible = p5Mode;
+    visual.group.position.set(
+      THREE.MathUtils.lerp(animal.previousX, animal.x, interpolationAlpha),
+      0,
+      THREE.MathUtils.lerp(animal.previousZ, animal.z, interpolationAlpha),
+    );
+    visual.warningRing.visible = animal.phase === "following" || animal.phase === "waitingForPen";
+    const ringMaterial = visual.warningRing.material as THREE.MeshBasicMaterial;
+    ringMaterial.color.set(animal.route === "fast" ? 0xffd36d : 0xb6b8ff);
+    if (Math.hypot(animal.lastMoveX, animal.lastMoveZ) > 0.01) {
+      visual.group.rotation.y = Math.atan2(-animal.lastMoveX, -animal.lastMoveZ);
+    }
+  }
+  if (predator) {
+    p5PredatorVisual.group.visible = p5Mode;
+    p5PredatorVisual.group.position.set(
+      THREE.MathUtils.lerp(predator.previousX, predator.x, interpolationAlpha),
+      0,
+      THREE.MathUtils.lerp(predator.previousZ, predator.z, interpolationAlpha),
+    );
+    p5PredatorVisual.warningRing.visible = predator.phase === "aim"
+      || predator.phase === "chasePlayer"
+      || predator.phase === "lunge";
+    const ringMaterial = p5PredatorVisual.warningRing.material as THREE.MeshBasicMaterial;
+    ringMaterial.color.set(predator.phase === "chasePlayer" ? 0xffd36d : 0xffb38e);
+    p5PredatorVisual.intentArrow.visible = predator.phase === "aim"
+      || predator.phase === "chasePlayer";
+    if (Math.hypot(predator.lastMoveX, predator.lastMoveZ) > 0.01) {
+      p5PredatorVisual.group.rotation.y = Math.atan2(-predator.lastMoveX, -predator.lastMoveZ);
+      p5PredatorVisual.intentArrow.rotation.y = Math.atan2(predator.lastMoveX, predator.lastMoveZ);
+    }
+  }
+  const pulse = 1 + Math.sin(p5Simulation.elapsedSeconds * 14) * 0.08;
+  for (const animal of [...cowards, ...followers, ...(predator ? [predator] : [])]) {
+    if (animal.type === "coward") {
+      const index = cowards.indexOf(animal);
+      cowardVisuals[index]?.reactionRing.scale.setScalar(pulse);
+    } else if (animal.type === "follower") {
+      const index = followers.indexOf(animal);
+      p5FollowerVisuals[index]?.warningRing.scale.setScalar(pulse);
+    } else {
+      p5PredatorVisual.warningRing.scale.setScalar(pulse);
+    }
+  }
+}
+
 function updateDiagnostics(deltaSeconds: number, speed: number): void {
   fpsFrames += 1;
   fpsElapsed += deltaSeconds;
@@ -1316,6 +1846,9 @@ function updateDiagnostics(deltaSeconds: number, speed: number): void {
   root.dataset.p4Status = p4Simulation.status;
   root.dataset.p4Phase = p4Simulation.predator.attackPhase;
   root.dataset.p4Victim = p4Simulation.victim.lifeState;
+  root.dataset.p5Status = p5Simulation.status;
+  root.dataset.p5DecisionUpdates = String(p5DecisionUpdates);
+  root.dataset.p5Routes = `${p5Simulation.discoveredRoutes.safe ? "safe" : ""}${p5Simulation.discoveredRoutes.fast ? ",fast" : ""}`;
   root.dataset.paused = String(paused);
 }
 
@@ -1343,21 +1876,35 @@ function simulate(stepSeconds: number): void {
       -16.5,
       16.5,
     );
-    const constrainedPlayer = constrainCircleAgainstPenRails(
-      previousSimulationPosition,
-      simulationPosition,
-      p3Simulation.pen,
-      PLAYER_COLLISION_RADIUS,
-    );
-    simulationPosition.x = constrainedPlayer.x;
-    simulationPosition.z = constrainedPlayer.z;
+    if (!p5Mode) {
+      const constrainedPlayer = constrainCircleAgainstPenRails(
+        previousSimulationPosition,
+        simulationPosition,
+        p3Simulation.pen,
+        PLAYER_COLLISION_RADIUS,
+      );
+      simulationPosition.x = constrainedPlayer.x;
+      simulationPosition.z = constrainedPlayer.z;
+    }
     if (direction.magnitude > 0.02 && speed > 0.02) {
       simulationRotationY = Math.atan2(-direction.x, -direction.z);
     }
 
     // P1 keeps integrating input and the active prototype decision slice is
     // intentionally lower-frequency and deterministic.
-    if (p4Mode) {
+    if (p5Mode) {
+      p5DecisionAccumulator += stepSeconds;
+      while (p5DecisionAccumulator >= P5_DECISION_SECONDS) {
+        p5DecisionAccumulator -= P5_DECISION_SECONDS;
+        stepP5DecisionAtPlayer(
+          simulationPosition.x,
+          simulationPosition.z,
+          speed,
+          speed >= 3.2,
+          P5_DECISION_SECONDS,
+        );
+      }
+    } else if (p4Mode) {
       p4DecisionAccumulator += stepSeconds;
       while (p4DecisionAccumulator >= P4_DECISION_SECONDS) {
         p4DecisionAccumulator -= P4_DECISION_SECONDS;
@@ -1415,12 +1962,25 @@ function frame(now: number): void {
   const p3SubjectZ = activeAnimals.length > 0
     ? activeAnimals.reduce((sum, animal) => sum + animal.z, 0) / activeAnimals.length
     : p3Simulation.pen.centerZ;
-  const subjectX = p4Mode
-    ? (p4Simulation.predator.x + p4Simulation.victim.x) / 2
-    : p3SubjectX;
-  const subjectZ = p4Mode
-    ? (p4Simulation.predator.z + p4Simulation.victim.z) / 2
-    : p3SubjectZ;
+  const p5ActiveAnimals = p5Simulation.animals.filter(
+    (animal) => animal.lifeState !== "captured" && animal.lifeState !== "disabled",
+  );
+  const p5SubjectX = p5ActiveAnimals.length > 0
+    ? p5ActiveAnimals.reduce((sum, animal) => sum + animal.x, 0) / p5ActiveAnimals.length
+    : 0;
+  const p5SubjectZ = p5ActiveAnimals.length > 0
+    ? p5ActiveAnimals.reduce((sum, animal) => sum + animal.z, 0) / p5ActiveAnimals.length
+    : -8;
+  const subjectX = p5Mode
+    ? p5SubjectX
+    : p4Mode
+      ? (p4Simulation.predator.x + p4Simulation.victim.x) / 2
+      : p3SubjectX;
+  const subjectZ = p5Mode
+    ? p5SubjectZ
+    : p4Mode
+      ? (p4Simulation.predator.z + p4Simulation.victim.z) / 2
+      : p3SubjectZ;
   const focusX = THREE.MathUtils.lerp(player.position.x, subjectX, 0.35);
   const focusZ = THREE.MathUtils.lerp(player.position.z, subjectZ, 0.35);
   cameraTarget.set(focusX, 0.85, focusZ);
@@ -1434,12 +1994,22 @@ function frame(now: number): void {
   camera.lookAt(cameraTarget);
 
   const prototypeInterpolationAlpha = THREE.MathUtils.clamp(
-    (p4Mode ? p4DecisionAccumulator : p3DecisionAccumulator)
-      / (p4Mode ? P4_DECISION_SECONDS : P3_DECISION_SECONDS),
+    (p5Mode
+      ? p5DecisionAccumulator
+      : p4Mode
+        ? p4DecisionAccumulator
+        : p3DecisionAccumulator)
+      / (p5Mode
+        ? P5_DECISION_SECONDS
+        : p4Mode
+          ? P4_DECISION_SECONDS
+          : P3_DECISION_SECONDS),
     0,
     1,
   );
-  if (p4Mode) {
+  if (p5Mode) {
+    updateP5Visuals(prototypeInterpolationAlpha);
+  } else if (p4Mode) {
     updateP4Visuals(prototypeInterpolationAlpha);
   } else {
     updateP3Visuals(prototypeInterpolationAlpha);
@@ -1506,6 +2076,28 @@ function getP4PublicState(): P4PublicState {
   };
 }
 
+function getP5PublicState(): P5PublicState {
+  const counts = getP5CapturedCounts();
+  return {
+    status: p5Simulation.status,
+    failureReason: p5Simulation.failureReason,
+    elapsedSeconds: p5Simulation.elapsedSeconds,
+    capturedCount: counts,
+    discoveredRoutes: { ...p5Simulation.discoveredRoutes },
+    animals: p5Simulation.animals.map((animal) => ({
+      id: animal.id,
+      type: animal.type,
+      phase: animal.phase,
+      lifeState: animal.lifeState,
+      route: animal.route,
+      x: animal.x,
+      z: animal.z,
+    })),
+    eventCount: p5Simulation.events.length,
+    lastEvent: p5Simulation.events.at(-1) ?? null,
+  };
+}
+
 window.__OITATE_P1__ = {
   getState: () => {
     const snapshot = input.getSnapshot();
@@ -1568,13 +2160,33 @@ const p4Api: P4PublicApi = {
 };
 window.__OITATE_P4__ = p4Api;
 
+const p5Api: P5PublicApi = {
+  getState: getP5PublicState,
+  retry: retryP5Prototype,
+  ...(p5E2EEnabled
+    ? {
+        e2e: {
+          primeAim: primeP5Aim,
+          runRescueSuccess: runP5RescueSuccess,
+          runRescueFailure: runP5RescueFailure,
+          runRouteDiscovery: runP5RouteDiscovery,
+          runCompletionReplay: runP5CompletionReplay,
+        },
+      }
+    : {}),
+};
+window.__OITATE_P5__ = p5Api;
+
 root.dataset.ready = "true";
 // Keep the P1 probe attribute for regression checks while exposing the P3
 // world separately for the new slice.
-root.dataset.worldEntities = p4Mode
-  ? "player,predator,victim,predator-pen"
-  : "player,animal";
+root.dataset.worldEntities = p5Mode
+  ? "player,coward-1..6,follower-1..4,predator,coward-pen,follower-pen,predator-pen,water,bridge"
+  : p4Mode
+    ? "player,predator,victim,predator-pen"
+    : "player,animal";
 root.dataset.p2WorldEntities = "player,coward-1,coward-2,coward-3,coward-4,coward-5,coward-6,pen";
 root.dataset.p3WorldEntities = "player,coward-1,coward-2,coward-3,coward-4,coward-5,coward-6,pen";
 root.dataset.p4WorldEntities = "player,predator,victim,predator-pen";
+root.dataset.p5WorldEntities = "player,coward-1..6,follower-1..4,predator,coward-pen,follower-pen,predator-pen,water,bridge";
 requestAnimationFrame(frame);
