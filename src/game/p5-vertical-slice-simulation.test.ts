@@ -102,6 +102,27 @@ describe("P5 vertical-slice simulation", () => {
     expect(entrance.z).toBeLessThan(-9.5);
   });
 
+  it("blocks a sweep at the follower pen without relying on the other pens", () => {
+    const state = createP5Simulation();
+    const radius = 0.52;
+    const start = { x: 3.5, z: -10.5 };
+    const target = { x: 14, z: -10.5 };
+    const sweepMinX = Math.min(start.x, target.x);
+
+    for (const pen of [state.pens.coward, state.pens.predator]) {
+      expect(sweepMinX).toBeGreaterThan(pen.centerX + pen.halfWidth + radius);
+    }
+
+    const follower = state.pens.follower;
+    expect(start.x).toBeLessThan(follower.centerX - follower.halfWidth - radius);
+    expect(target.x).toBeGreaterThan(follower.centerX - follower.halfWidth + radius);
+
+    const constrained = constrainP5CircleAgainstPens(state.pens, start, target, radius);
+    expect(constrained.x).toBeLessThanOrEqual(
+      follower.centerX - follower.halfWidth - radius,
+    );
+  });
+
   it("records safe and fast route discoveries separately", () => {
     const state = createP5Simulation();
     tick(state, { x: -5.2, z: 0 });
