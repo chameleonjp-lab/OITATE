@@ -172,8 +172,6 @@ describe("P5 vertical-slice simulation", () => {
       animal.z = pen.entranceZ - 0.3;
       animal.previousX = animal.x;
       animal.previousZ = animal.z;
-      animal.phase = "enteringPen";
-      state.penReservations[animal.type] = animal.id;
       for (let step = 0; step < 30 && animal.lifeState === "active"; step += 1) {
         tick(state, { x: 10, z: 10 });
       }
@@ -218,6 +216,22 @@ describe("P5 vertical-slice simulation", () => {
     });
     expect(rejected.threatAccepted).toBe(false);
     expect(secondPredator.phase).toBe("lunge");
+  });
+
+  it("ends the threat chase after its fixed four-second duration", () => {
+    const state = createP5Simulation();
+    const predator = getAnimal(state, "predator-1");
+    predator.x = 0;
+    predator.z = 0;
+    const accepted = tick(state, { x: 0, z: 0, threatSignal: true });
+    expect(accepted.threatAccepted).toBe(true);
+    expect(predator.phase).toBe("recovery");
+
+    predator.phase = "chasePlayer";
+    predator.threatSeconds = P5_TUNING.threatDurationSeconds;
+    for (let step = 0; step < 80; step += 1) tick(state, { x: 10, z: 10 });
+    expect(predator.threatSeconds).toBe(0);
+    expect(predator.phase).toBe("search");
   });
 
   it("supports rescue success and locks rescue timeout as failure", () => {
@@ -302,6 +316,25 @@ describe("P5 vertical-slice simulation", () => {
     expect(result.rescued).toBe(true);
     expect(victim.lifeState).toBe("active");
     expect(victim.rescueCount).toBe(1);
+  });
+
+  it("does not seal the predator while rescue is pending", () => {
+    const state = createP5Simulation();
+    const victim = getAnimal(state, "coward-1");
+    const predator = getAnimal(state, "predator-1");
+    victim.lifeState = "rescuePending";
+    victim.phase = "rescuePending";
+    victim.rescueSeconds = 0;
+    predator.x = state.pens.predator.centerX;
+    predator.z = state.pens.predator.centerZ;
+    predator.insidePen = true;
+    predator.phase = "recovery";
+    for (let step = 0; step < 60 && state.status === "active"; step += 1) {
+      tick(state, { x: 10, z: 10 });
+    }
+    expect(state.status).toBe("failed");
+    expect(state.failureReason).toBe("rescueTimeout");
+    expect(predator.lifeState).toBe("disabled");
   });
 
   it("fails on a valid repeated attack after rescue", () => {
