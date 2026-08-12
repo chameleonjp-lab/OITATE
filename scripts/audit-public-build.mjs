@@ -67,6 +67,55 @@ function resolveAssetReference(fromPath, reference) {
   return normalizeRelativePath(candidate);
 }
 
+function isAsciiWhitespace(character) {
+  return character === " "
+    || character === "\t"
+    || character === "\n"
+    || character === "\f"
+    || character === "\r";
+}
+
+function findDataCandidateSeparator(value, start) {
+  for (let index = start; index < value.length; index += 1) {
+    if (value[index] !== ",") continue;
+
+    let cursor = index + 1;
+    while (cursor < value.length && isAsciiWhitespace(value[cursor])) cursor++;
+    if (cursor >= value.length || value[cursor] === ",") continue;
+
+    const urlStart = cursor;
+    while (
+      cursor < value.length
+      && !isAsciiWhitespace(value[cursor])
+      && value[cursor] !== ","
+    ) {
+      cursor++;
+    }
+    if (cursor === urlStart) continue;
+
+    while (cursor < value.length && isAsciiWhitespace(value[cursor])) cursor++;
+    if (cursor >= value.length || value[cursor] === ",") return index;
+
+    const descriptorStart = cursor;
+    while (
+      cursor < value.length
+      && !isAsciiWhitespace(value[cursor])
+      && value[cursor] !== ","
+    ) {
+      cursor++;
+    }
+    const descriptor = value.slice(descriptorStart, cursor);
+    while (cursor < value.length && isAsciiWhitespace(value[cursor])) cursor++;
+    if (
+      /^(?:\d+(?:\.\d+)?[wx]|type=[^\s,]+)$/i.test(descriptor)
+      && (cursor >= value.length || value[cursor] === ",")
+    ) {
+      return index;
+    }
+  }
+  return -1;
+}
+
 function extractSrcsetReferences(value) {
   const cleanValue = String(value).trim();
   if (!cleanValue) return [];
@@ -74,41 +123,50 @@ function extractSrcsetReferences(value) {
   const references = [];
   let cursor = 0;
   while (cursor < cleanValue.length) {
-    while (cursor < cleanValue.length && /[\s,]/.test(cleanValue[cursor])) cursor++;
+    while (
+      cursor < cleanValue.length
+      && (isAsciiWhitespace(cleanValue[cursor]) || cleanValue[cursor] === ",")
+    ) {
+      cursor++;
+    }
     if (cursor >= cleanValue.length) break;
 
-    const remainder = cleanValue.slice(cursor);
+    const start = cursor;
+    const remainder = cleanValue.slice(start);
     if (/^data:/i.test(remainder)) {
-      const candidateSeparator = remainder.search(
-        /,(?=\s*(?:\.\.?\/|\/|[A-Za-z0-9_.-]+(?:[?#][^\s,]*)?|[A-Za-z][A-Za-z\d+.-]*:|data:))/i,
-      );
-      if (candidateSeparator !== -1) {
-        const dataReference = cleanValue.slice(cursor, cursor + candidateSeparator).trim();
-        if (dataReference) references.push(dataReference);
-        cursor += candidateSeparator + 1;
-        continue;
-      }
-
-      const descriptorOffset = remainder.search(/\s/);
-      const urlEnd = descriptorOffset === -1
-        ? cleanValue.length
-        : cursor + descriptorOffset;
-      const dataReference = cleanValue.slice(cursor, urlEnd).trim();
+      const separator = findDataCandidateSeparator(cleanValue, start);
+      const whitespaceOffset = remainder.search(/[ \t\n\f\r]/);
+      const dataEnd = whitespaceOffset === -1
+        ? (separator === -1 ? cleanValue.length : separator)
+        : start + whitespaceOffset;
+      const dataReference = cleanValue.slice(start, dataEnd).trim();
       if (dataReference) references.push(dataReference);
-      if (descriptorOffset === -1) break;
-      const nextComma = cleanValue.indexOf(",", urlEnd);
-      cursor = nextComma === -1 ? cleanValue.length : nextComma + 1;
+      if (separator === -1) break;
+      cursor = separator + 1;
       continue;
     }
 
-    const nextComma = cleanValue.indexOf(",", cursor);
-    const candidate = cleanValue.slice(
-      cursor,
-      nextComma === -1 ? cleanValue.length : nextComma,
-    );
-    const reference = candidate.trim().split(/\s+/)[0];
+    const isAbsoluteUrl = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(remainder);
+    if (isAbsoluteUrl) {
+      while (cursor < cleanValue.length && !isAsciiWhitespace(cleanValue[cursor])) cursor++;
+      const reference = cleanValue.slice(start, cursor).trim();
+      if (reference) references.push(reference);
+      while (cursor < cleanValue.length && cleanValue[cursor] !== ",") cursor++;
+      if (cleanValue[cursor] === ",") cursor++;
+      continue;
+    }
+
+    while (
+      cursor < cleanValue.length
+      && !isAsciiWhitespace(cleanValue[cursor])
+      && cleanValue[cursor] !== ","
+    ) {
+      cursor++;
+    }
+    const reference = cleanValue.slice(start, cursor).trim();
     if (reference) references.push(reference);
-    cursor = nextComma === -1 ? cleanValue.length : nextComma + 1;
+    while (cursor < cleanValue.length && cleanValue[cursor] !== ",") cursor++;
+    if (cleanValue[cursor] === ",") cursor++;
   }
   return references;
 }
