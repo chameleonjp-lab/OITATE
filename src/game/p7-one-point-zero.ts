@@ -7,6 +7,7 @@ import {
   type P6Storage,
 } from "./p6-vertical-slice-completion";
 import {
+  type P5AnimalType,
   type P5EventType,
   type P5Route,
   type P5SimulationScenario,
@@ -59,6 +60,8 @@ function scenario(
   predatorCount: number,
   requiredRoutes: P5Route[] = [],
   requiredEvents: P5EventType[] = [],
+  requiredRouteAnimalTypes: Partial<Record<P5Route, P5AnimalType>> = {},
+  requiredEventSequence: P5EventType[] = [],
 ): P5SimulationScenario {
   return {
     cowardCount,
@@ -66,6 +69,8 @@ function scenario(
     predatorCount,
     requiredRoutes,
     requiredEvents,
+    requiredRouteAnimalTypes,
+    requiredEventSequence,
   };
 }
 
@@ -94,7 +99,14 @@ export const P7_STAGES: readonly P7StageDefinition[] = [
     center: "合図と地形を使う",
     description: "誘導音で追従種を動かし、浅い水を避けるか橋を使って進めます。",
     objective: "誘導音を使い、速い経路を発見して追従種4体を収容する",
-    simulation: scenario(0, 4, 0, ["fast"], ["animalStartedFollowing"]),
+    simulation: scenario(
+      0,
+      4,
+      0,
+      ["fast"],
+      ["animalStartedFollowing"],
+      { fast: "follower" },
+    ),
     isPractice: false,
   },
   {
@@ -109,14 +121,16 @@ export const P7_STAGES: readonly P7StageDefinition[] = [
   {
     id: 4,
     title: "4　合図の副作用",
-    center: "合図の相手を選ぶ",
-    description: "誘導音と威嚇音は、別の動物にも状況を変えます。順番を考えます。",
-    objective: "誘導音と威嚇音を使い分け、6体を収容する",
+    center: "合図の順番を選ぶ",
+    description: "誘導音で追従種を動かした後、威嚇音で危険種を引きつけます。順番を変えると状況も変わります。",
+    objective: "誘導音の後に威嚇音を使い、6体を収容する",
     simulation: scenario(
       3,
       3,
       1,
       [],
+      ["animalStartedFollowing", "predatorThreatAccepted"],
+      {},
       ["animalStartedFollowing", "predatorThreatAccepted"],
     ),
     isPractice: false,
@@ -125,23 +139,31 @@ export const P7_STAGES: readonly P7StageDefinition[] = [
     id: 5,
     title: "5　群れの分裂",
     center: "狭い経路を順番に使う",
-    description: "群れを一度に押し込まず、安全な経路と速い経路を使い分けます。",
-    objective: "2つの経路を発見し、臆病種6体と追従種4体を収容する",
-    simulation: scenario(6, 4, 0, ["safe", "fast"]),
+    description: "臆病種は安全経路、追従種は速い経路を使います。群れを一度に押し込まず、順番を選びます。",
+    objective: "安全経路を臆病種、速い経路を追従種が通り、10体を収容する",
+    simulation: scenario(
+      6,
+      4,
+      0,
+      ["safe", "fast"],
+      [],
+      { safe: "coward", fast: "follower" },
+    ),
     isPractice: false,
   },
   {
     id: 6,
     title: "6　総合",
     center: "3種類を同時に管理する",
-    description: "これまでの3種類、地形、2つの経路をまとめて扱います。",
-    objective: "2つの経路と2種類の合図を使い、11体を収容する",
+    description: "これまでの3種類、地形、2つの経路、2種類の合図を組み合わせます。",
+    objective: "安全経路を臆病種、速い経路を追従種が通り、2種類の合図を使って11体を収容する",
     simulation: scenario(
       6,
       4,
       1,
       ["safe", "fast"],
       ["animalStartedFollowing", "predatorThreatAccepted"],
+      { safe: "coward", fast: "follower" },
     ),
     isPractice: false,
   },
