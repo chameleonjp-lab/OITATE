@@ -65,14 +65,14 @@ P8-Bでは、実機・性能・再開・保存の確認結果を、個人情報�
 
 P8-Cでは、公開候補の容量・初期読み込み対象・依存パッケージの権利情報を、GitHub Actionsで同じ手順から再生成できるようにする。これは実機確認や公開判定の代わりではなく、公開前に確認すべき技術情報を取りこぼさないための証跡である。
 
-- Viteの\`dist/.vite/manifest.json\`をゲーム入口のバンドル資産の正本として扱い、HTMLの静的参照確認で実ファイルの存在も照合する。
-- \`index.html\`と\`candidate.html\`から到達できるローカルファイルを追跡する。\`srcset\`、\`poster\`、SVG参照、CSS \`@import\`、CSS \`url()\`を検査対象に含める。
+- Viteの`dist/.vite/manifest.json`をゲーム入口のバンドル資産の正本として扱い、HTMLの静的参照確認で実ファイルの存在も照合する。
+- `index.html`と`candidate.html`から到達できるローカルファイルを追跡する。`srcset`、`poster`、SVG参照、CSS `@import`、CSS `url()`を検査対象に含める。
 - 入口ごとの到達closureをgzip換算15MiB以下で判定し、dist全体の容量は参考情報として残す。
-- \`npm ls --all --include=dev --json\`の終了コード、JSON、\`problems\`、宣言済み依存の欠落、依存ノードのpathとmanifestの不整合を確認する。どれか一つでも不完全なら成功にしない。
-- 実際にインストールされた直接依存・開発依存・推移依存のパッケージ名、版、区分、ライセンスを記録し、\`UNKNOWN\`を大文字小文字に関係なく失敗にする。
-- \`source head SHA\`と\`tested merge SHA\`を分け、結果JSONとMarkdownへ記録する。
-- \`vite preview\`を使うE2Eで要求失敗、4xx/5xx、画像読み込み失敗、console error、page errorを確認する。
-- 結果はCI artifact \`p8-public-audit\`へ必ず保存し、生成物がない場合もCIを失敗させる。監査成功だけでは、指定端末の性能、画面、音、入力、画像、動画、公開承認を合格にしない。
+- `npm ls --all --include=dev --json`の終了コード、JSON、`problems`、宣言済み依存の欠落、依存ノードのpathとmanifestの不整合を確認する。どれか一つでも不完全なら成功にしない。
+- 実際にインストールされた直接依存・開発依存・推移依存のパッケージ名、版、区分、ライセンスを記録し、`UNKNOWN`を大文字小文字に関係なく失敗にする。
+- `source head SHA`と`tested merge SHA`を分け、結果JSONとMarkdownへ記録する。
+- `vite preview`を使うE2Eで要求失敗、4xx/5xx、画像読み込み失敗、console error、page errorを確認する。
+- 結果はCI artifact `p8-public-audit`へ必ず保存し、生成物がない場合もCIを失敗させる。監査成功だけでは、指定端末の性能、画面、音、入力、画像、動画、公開承認を合格にしない。
 
 ### P8-Cの受入条件
 
