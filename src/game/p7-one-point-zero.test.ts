@@ -83,6 +83,98 @@ describe("P7 1.0 content progression", () => {
     expect(state.status).toBe("completed");
   });
 
+  it("enforces ordered signals and role-specific route use", () => {
+    const stage4 = getP7Stage(4);
+    const stage4State = createP5Simulation(stage4.simulation);
+    for (const animal of stage4State.animals) {
+      animal.lifeState = "captured";
+      animal.phase = "captured";
+    }
+    stage4State.events = [
+      {
+        id: 1,
+        type: "predatorThreatAccepted",
+        atSeconds: 1,
+        subjectId: "predator-1",
+        reason: "test",
+      },
+      {
+        id: 2,
+        type: "animalStartedFollowing",
+        atSeconds: 2,
+        subjectId: "follower-1",
+        reason: "test",
+      },
+    ];
+    stepP5Simulation(stage4State, { x: 0, z: 0, speed: 0, isRunning: false }, 0.05);
+    expect(stage4State.status).toBe("active");
+
+    stage4State.events = [
+      {
+        id: 1,
+        type: "animalStartedFollowing",
+        atSeconds: 1,
+        subjectId: "follower-1",
+        reason: "test",
+      },
+      {
+        id: 2,
+        type: "predatorThreatAccepted",
+        atSeconds: 2,
+        subjectId: "predator-1",
+        reason: "test",
+      },
+    ];
+    stepP5Simulation(stage4State, { x: 0, z: 0, speed: 0, isRunning: false }, 0.05);
+    expect(stage4State.status).toBe("completed");
+
+    const stage5 = getP7Stage(5);
+    const stage5State = createP5Simulation(stage5.simulation);
+    for (const animal of stage5State.animals) {
+      animal.lifeState = "captured";
+      animal.phase = "captured";
+    }
+    stage5State.discoveredRoutes.safe = true;
+    stage5State.discoveredRoutes.fast = true;
+    stage5State.events = [
+      {
+        id: 1,
+        type: "routeDiscovered",
+        atSeconds: 1,
+        subjectId: "follower-1",
+        reason: "safe",
+      },
+      {
+        id: 2,
+        type: "routeDiscovered",
+        atSeconds: 2,
+        subjectId: "coward-1",
+        reason: "fast",
+      },
+    ];
+    stepP5Simulation(stage5State, { x: 0, z: 0, speed: 0, isRunning: false }, 0.05);
+    expect(stage5State.status).toBe("active");
+
+    stage5State.events = [
+      {
+        id: 1,
+        type: "routeDiscovered",
+        atSeconds: 1,
+        subjectId: "coward-1",
+        reason: "safe",
+      },
+      {
+        id: 2,
+        type: "routeDiscovered",
+        atSeconds: 2,
+        subjectId: "follower-1",
+        reason: "fast",
+      },
+    ];
+    stepP5Simulation(stage5State, { x: 0, z: 0, speed: 0, isRunning: false }, 0.05);
+    expect(stage5State.status).toBe("completed");
+  });
+
   it("unlocks the next stage, keeps best records, and gates the fourth animal", () => {
     let progress = createP7Progress();
     expect(isP7StageUnlocked(progress, 1)).toBe(true);
