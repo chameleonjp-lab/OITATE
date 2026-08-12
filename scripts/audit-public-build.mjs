@@ -79,6 +79,16 @@ function extractSrcsetReferences(value) {
 
     const remainder = cleanValue.slice(cursor);
     if (/^data:/i.test(remainder)) {
+      const candidateSeparator = remainder.search(
+        /,(?=\s*(?:\.\.?\/|\/|[A-Za-z0-9_.-]+\/|[A-Za-z][A-Za-z\d+.-]*:|data:))/i,
+      );
+      if (candidateSeparator !== -1) {
+        const dataReference = cleanValue.slice(cursor, cursor + candidateSeparator).trim();
+        if (dataReference) references.push(dataReference);
+        cursor += candidateSeparator + 1;
+        continue;
+      }
+
       const descriptorOffset = remainder.search(/\s/);
       const urlEnd = descriptorOffset === -1
         ? cleanValue.length
@@ -212,7 +222,7 @@ function collectReachableAssets(distDirectory, entryPath, availablePaths) {
   return { reachable, missingReferences };
 }
 
-function validateViteManifest(manifest, manifestPath) {
+function validateViteManifest(manifest, manifestPath, availablePaths) {
   const failures = [];
   if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
     return ["Vite manifest is not an object: " + manifestPath];
@@ -230,6 +240,25 @@ function validateViteManifest(manifest, manifestPath) {
     if (typeof entry.file !== "string" || entry.file.trim() === "") {
       failures.push(label + " must define file as a non-empty string");
     }
+
+    const assetFields = {
+      file: [entry.file],
+      css: Array.isArray(entry.css) ? entry.css : [],
+      assets: Array.isArray(entry.assets) ? entry.assets : [],
+    };
+    for (const [field, assetValues] of Object.entries(assetFields)) {
+      for (const assetPath of assetValues) {
+        if (typeof assetPath !== "string" || assetPath.trim() === "") continue;
+        const normalizedPath = normalizeRelativePath(assetPath);
+        if (availablePaths && !availablePaths.has(normalizedPath)) {
+          failures.push(
+            "missing Vite manifest asset: "
+            + key + "." + field + " -> " + normalizedPath,
+          );
+        }
+      }
+    }
+
     for (const field of MANIFEST_ARRAY_FIELDS) {
       if (entry[field] === undefined) continue;
       if (
@@ -275,7 +304,7 @@ function validateViteManifest(manifest, manifestPath) {
   return [...new Set(failures)];
 }
 
-function readViteManifest(distDirectory) {
+function readViteManifest(distDirectory, availablePaths) {
   const manifestPath = VITE_MANIFEST_PATHS[0];
   const absolutePath = join(distDirectory, manifestPath);
   if (!existsSync(absolutePath)) {
@@ -290,7 +319,7 @@ function readViteManifest(distDirectory) {
     return {
       path: manifestPath,
       manifest,
-      failures: validateViteManifest(manifest, manifestPath),
+      failures: validateViteManifest(manifest, manifestPath, availablePaths),
     };
   } catch (error) {
     return {
@@ -374,7 +403,7 @@ export function collectBuildAudit({
   const fileInfos = absoluteFiles.map((file) => createFileInfo(absoluteDistDirectory, file));
   const infoByPath = new Map(fileInfos.map((info) => [info.path, info]));
   const availablePaths = new Set(infoByPath.keys());
-  const manifestInfo = readViteManifest(absoluteDistDirectory);
+  const manifestInfo = readViteManifest(absoluteDistDirectory, availablePaths);
   const entrypoints = ENTRYPOINTS.map((entrypoint) => {
     const manualClosure = collectReachableAssets(
       absoluteDistDirectory,
@@ -462,7 +491,7 @@ export { normalizeLicense };
 
 function isUnknownLicense(value) {
   if (!value || typeof value !== "string") return true;
-  return /(?:^|[\s(])(?:unknown|undefined|null|n\/a|not\s+specified|noassertion)(?=$|[\s)])/i.test(
+  return /(?:^|[^A-Za-z0-9-])(?:unknown|undefined|null|n\/a|not\s+specified|noassertion)(?=$|[^A-Za-z0-9-])/i.test(
     value.trim(),
   );
 }
@@ -585,7 +614,14 @@ function requiredDependencyNames(manifest) {
   );
 }
 
-function validateRequiredDependencyEdges({ root, manifest, node, packageLabel, failures }) {
+function validateRequiredDependencyEdges({
+  root,
+  manifest,
+  node,
+  nodeIndex,
+  packageLabel,
+  failures,
+}) {
   const requiredNames = requiredDependencyNames(manifest);
   if (requiredNames.length === 0) return;
 
@@ -593,10 +629,16 @@ function validateRequiredDependencyEdges({ root, manifest, node, packageLabel, f
   if (dependencyMap === undefined || dependencyMap === null) {
     for (const dependencyName of requiredNames) {
       const installedPath = resolveInstalledPackagePath(root, node?.path ?? root, dependencyName);
+      const indexedNode = installedPath ? nodeIndex?.get(resolve(installedPath)) : null;
       const packageInfo = readPackageJson(installedPath);
-      if (packageInfo.error || packageInfo.manifest?.name !== dependencyName) {
+      if (
+        !indexedNode
+        || indexedNode.name !== dependencyName
+        || packageInfo.error
+        || packageInfo.manifest?.name !== dependencyName
+      ) {
         failures.push(
-          "required dependency cannot be resolved from npm installation: "
+          "required dependency is missing from npm ls: "
           + packageLabel + " -> " + dependencyName,
         );
       }
@@ -717,19 +759,21 @@ export function collectDependencyLicenses({
     directPaths.set(installedPath, { name, scope });
   }
 
+  const nodes = [];
+  if (tree && typeof tree === "object" && !Array.isArray(tree)) {
+    collectDependencyNodes(tree, { root, nodes, failures, visited: new Set() }, root);
+  }
+  const nodeIndex = new Map(nodes.map((node) => [resolve(node.path), node]));
+
   if (tree && typeof tree === "object" && !Array.isArray(tree)) {
     validateRequiredDependencyEdges({
       root,
       manifest: rootManifest,
       node: tree,
+      nodeIndex,
       packageLabel: rootManifest.name ?? "root",
       failures,
     });
-  }
-
-  const nodes = [];
-  if (tree && typeof tree === "object" && !Array.isArray(tree)) {
-    collectDependencyNodes(tree, { root, nodes, failures, visited: new Set() }, root);
   }
 
   const packages = [];
@@ -762,6 +806,7 @@ export function collectDependencyLicenses({
       root,
       manifest,
       node,
+      nodeIndex,
       packageLabel: name + "@" + version,
       failures,
     });
