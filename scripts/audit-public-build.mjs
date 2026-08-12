@@ -81,7 +81,7 @@ function extractHtmlAssetReferences(content) {
   for (const match of content.matchAll(pattern)) {
     const attribute = match[1].toLowerCase();
     const reference = match[3];
-    if (attribute === "href" && withoutUrlSuffix(reference) === ".") continue;
+    if (attribute === "href" && [".", "./"].includes(withoutUrlSuffix(reference))) continue;
     if (attribute.endsWith("srcset")) {
       references.push(...extractSrcsetReferences(reference));
     } else {
@@ -448,6 +448,18 @@ function resolveInstalledPackagePath(root, parentPath, name) {
   }
 }
 
+function isUninstalledOptionalNode(node, parentPath, dependencyName) {
+  if (node?.optional === true || node?.peerOptional === true || node?.devOptional === true) {
+    return true;
+  }
+  const parentManifest = readPackageJson(parentPath).manifest;
+  if (!parentManifest || !dependencyName) return false;
+  if (Object.prototype.hasOwnProperty.call(parentManifest.optionalDependencies ?? {}, dependencyName)) {
+    return true;
+  }
+  return parentManifest.peerDependenciesMeta?.[dependencyName]?.optional === true;
+}
+
 function collectDependencyNodes(
   node,
   { root, nodes, failures, visited },
@@ -475,7 +487,7 @@ function collectDependencyNodes(
   visited.add(key);
 
   if (!nodePath) {
-    if (node.optional === true || node.peerOptional === true) return;
+    if (isUninstalledOptionalNode(node, parentPath, dependencyName)) return;
     failures.push("unresolved installed package path: " + (name ?? dependencyName ?? "unknown"));
     return;
   }
