@@ -29,6 +29,17 @@ jobs:
         run: npm test
       - name: Production build
         run: npm run build
+      - name: Audit script tests
+        run: npm run test:audit
+      - name: Public build and license audit
+        run: npm run audit:public
+      - name: Upload P8 public audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p8-public-audit
+          path: artifacts/p8-public-audit/
+          if-no-files-found: warn
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Browser tests
