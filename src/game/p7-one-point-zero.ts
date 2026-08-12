@@ -123,7 +123,7 @@ export const P7_STAGES: readonly P7StageDefinition[] = [
     title: "4　合図の副作用",
     center: "合図の順番を選ぶ",
     description: "誘導音で追従種を動かした後、威嚇音で危険種を引きつけます。順番を変えると状況も変わります。",
-    objective: "誘導音の後に威嚇音を使い、6体を収容する",
+    objective: "誘導音の後に威嚇音を使い、保護対象6体を収容し、危険種1体を隔離する",
     simulation: scenario(
       3,
       3,
