@@ -31,11 +31,14 @@ test("candidate page serves all local media in Vite preview", async ({ page }) =
   await expect(page).toHaveTitle(/OITATE.*公開候補版/);
   await expect(page.locator("#hero-title")).toBeVisible();
   const imageStates = await page.locator("img").evaluateAll((images) =>
-    images.map((image) => ({
-      src: image.getAttribute("src"),
-      complete: image.complete,
-      naturalWidth: image.naturalWidth,
-    })),
+    images.map((image) => {
+      const element = image as HTMLImageElement;
+      return {
+        src: element.getAttribute("src"),
+        complete: element.complete,
+        naturalWidth: element.naturalWidth,
+      };
+    }),
   );
   expect(imageStates).toHaveLength(4);
   expect(imageStates.every((image) => image.complete && image.naturalWidth > 0)).toBe(true);
