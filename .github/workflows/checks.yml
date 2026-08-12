@@ -32,6 +32,9 @@ jobs:
       - name: Audit script tests
         run: npm run test:audit
       - name: Public build and license audit
+        env:
+          P8_SOURCE_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          P8_TESTED_MERGE_SHA: ${{ github.sha }}
         run: npm run audit:public
       - name: Upload P8 public audit
         if: always()
