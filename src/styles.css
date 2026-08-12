@@ -136,6 +136,10 @@ h1 {
   backdrop-filter: blur(7px);
 }
 
+.p1-shell.p8-check .diagnostics {
+  z-index: 30;
+}
+
 .diagnostics strong {
   color: #ffe085;
   grid-column: 1 / -1;
