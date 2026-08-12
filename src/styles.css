@@ -136,7 +136,7 @@ h1 {
   backdrop-filter: blur(7px);
 }
 
-.p1-shell.p8-check .diagnostics {
+.p8-check .diagnostics {
   z-index: 30;
 }
 
