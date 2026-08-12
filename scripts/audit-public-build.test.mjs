@@ -624,6 +624,7 @@ test("detects unknown tokens inside compound license expressions", () => {
     ["MIT;unknown", true],
     ["[NOASSERTION]", true],
     ["UNKNOWNISH", false],
+    ["LicenseRef-UNKNOWN", false],
     ["MIT AND Apache-2.0", false],
   ];
 
