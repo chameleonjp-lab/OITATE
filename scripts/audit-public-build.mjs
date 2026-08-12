@@ -652,7 +652,18 @@ function validateRequiredDependencyEdges({
 
   for (const dependencyName of requiredNames) {
     const child = dependencyMap[dependencyName];
-    if (!child || typeof child !== "object" || Array.isArray(child)) {
+    if (child && typeof child === "object" && !Array.isArray(child)) continue;
+
+    const installedPath = resolveInstalledPackagePath(root, node?.path ?? root, dependencyName);
+    const indexedNode = installedPath ? nodeIndex?.get(resolve(installedPath)) : null;
+    const packageInfo = readPackageJson(installedPath);
+    const hoistedNodeIsPresent = Boolean(
+      indexedNode
+      && indexedNode.name === dependencyName
+      && !packageInfo.error
+      && packageInfo.manifest?.name === dependencyName,
+    );
+    if (!hoistedNodeIsPresent) {
       failures.push(
         "required dependency is missing from npm ls: "
         + packageLabel + " -> " + dependencyName,
