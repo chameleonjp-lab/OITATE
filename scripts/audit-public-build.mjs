@@ -674,7 +674,7 @@ function validateRequiredDependencyEdges({
 
 function collectDependencyNodes(
   node,
-  { root, nodes, failures, visited },
+  { root, nodes, failures, visited, expandedEdges },
   parentPath,
   dependencyName,
 ) {
@@ -695,8 +695,8 @@ function collectDependencyNodes(
   const name = typeof node.name === "string" && node.name ? node.name : dependencyName ?? null;
   const version = typeof node.version === "string" && node.version ? node.version : null;
   const key = String(nodePath) + ":" + String(name) + ":" + String(version);
-  if (visited.has(key)) return;
-  visited.add(key);
+  const firstVisit = !visited.has(key);
+  if (firstVisit) visited.add(key);
 
   if (!nodePath) {
     if (isUninstalledOptionalNode(node, parentPath, dependencyName)) return;
@@ -705,7 +705,7 @@ function collectDependencyNodes(
   }
 
   const record = { ...node, name, version, path: nodePath };
-  if (nodePath !== root) nodes.push(record);
+  if (firstVisit && nodePath !== root) nodes.push(record);
 
   if (node.dependencies !== undefined && (
     !node.dependencies || typeof node.dependencies !== "object" || Array.isArray(node.dependencies)
@@ -714,7 +714,17 @@ function collectDependencyNodes(
   }
 
   for (const [childName, child] of Object.entries(node.dependencies ?? {})) {
-    collectDependencyNodes(child, { root, nodes, failures, visited }, nodePath ?? parentPath ?? root, childName);
+    const childKey = key + "\\u0000" + childName + "\\u0000"
+      + String(child?.path ?? "")
+      + "\\u0000" + String(child?.version ?? "");
+    if (expandedEdges.has(childKey)) continue;
+    expandedEdges.add(childKey);
+    collectDependencyNodes(
+      child,
+      { root, nodes, failures, visited, expandedEdges },
+      nodePath ?? parentPath ?? root,
+      childName,
+    );
   }
 }
 
@@ -772,7 +782,7 @@ export function collectDependencyLicenses({
 
   const nodes = [];
   if (tree && typeof tree === "object" && !Array.isArray(tree)) {
-    collectDependencyNodes(tree, { root, nodes, failures, visited: new Set() }, root);
+    collectDependencyNodes(tree, { root, nodes, failures, visited: new Set(), expandedEdges: new Set() }, root);
   }
   const nodeIndex = new Map(nodes.map((node) => [resolve(node.path), node]));
 
