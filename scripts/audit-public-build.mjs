@@ -81,7 +81,11 @@ function findDataCandidateSeparator(value, start) {
 
     let cursor = index + 1;
     while (cursor < value.length && isAsciiWhitespace(value[cursor])) cursor++;
-    if (cursor >= value.length || value[cursor] === ",") continue;
+    if (
+      cursor === index + 1
+      || cursor >= value.length
+      || value[cursor] === ","
+    ) continue;
 
     const urlStart = cursor;
     while (
