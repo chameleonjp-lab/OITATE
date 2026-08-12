@@ -80,7 +80,7 @@ function extractSrcsetReferences(value) {
     const remainder = cleanValue.slice(cursor);
     if (/^data:/i.test(remainder)) {
       const candidateSeparator = remainder.search(
-        /,(?=\s*(?:\.\.?\/|\/|[A-Za-z0-9_.-]+\/|[A-Za-z][A-Za-z\d+.-]*:|data:))/i,
+        /,(?=\s*(?:\.\.?\/|\/|[A-Za-z0-9_.-]+(?:[?#][^\s,]*)?|[A-Za-z][A-Za-z\d+.-]*:|data:))/i,
       );
       if (candidateSeparator !== -1) {
         const dataReference = cleanValue.slice(cursor, cursor + candidateSeparator).trim();
@@ -572,10 +572,7 @@ function resolveInstalledPackagePath(root, parentPath, name) {
   }
 }
 
-function isUninstalledOptionalNode(node, parentPath, dependencyName) {
-  if (node?.optional === true || node?.peerOptional === true || node?.devOptional === true) {
-    return true;
-  }
+function isUninstalledOptionalNode(parentPath, dependencyName) {
   const parentManifest = readPackageJson(parentPath).manifest;
   if (!parentManifest || !dependencyName) return false;
   if (Object.prototype.hasOwnProperty.call(parentManifest.optionalDependencies ?? {}, dependencyName)) {
@@ -651,9 +648,6 @@ function validateRequiredDependencyEdges({
   }
 
   for (const dependencyName of requiredNames) {
-    const child = dependencyMap[dependencyName];
-    if (child && typeof child === "object" && !Array.isArray(child)) continue;
-
     const installedPath = resolveInstalledPackagePath(root, node?.path ?? root, dependencyName);
     const indexedNode = installedPath ? nodeIndex?.get(resolve(installedPath)) : null;
     const packageInfo = readPackageJson(installedPath);
@@ -674,7 +668,7 @@ function validateRequiredDependencyEdges({
 
 function collectDependencyNodes(
   node,
-  { root, nodes, failures, visited, expandedEdges },
+  { root, nodes, failures, visited },
   parentPath,
   dependencyName,
 ) {
@@ -699,7 +693,7 @@ function collectDependencyNodes(
   if (firstVisit) visited.add(key);
 
   if (!nodePath) {
-    if (isUninstalledOptionalNode(node, parentPath, dependencyName)) return;
+    if (isUninstalledOptionalNode(parentPath, dependencyName)) return;
     failures.push("unresolved installed package path: " + (name ?? dependencyName ?? "unknown"));
     return;
   }
@@ -714,14 +708,9 @@ function collectDependencyNodes(
   }
 
   for (const [childName, child] of Object.entries(node.dependencies ?? {})) {
-    const childKey = key + "\\u0000" + childName + "\\u0000"
-      + String(child?.path ?? "")
-      + "\\u0000" + String(child?.version ?? "");
-    if (expandedEdges.has(childKey)) continue;
-    expandedEdges.add(childKey);
     collectDependencyNodes(
       child,
-      { root, nodes, failures, visited, expandedEdges },
+      { root, nodes, failures, visited },
       nodePath ?? parentPath ?? root,
       childName,
     );
@@ -773,7 +762,7 @@ export function collectDependencyLicenses({
     }
     const installedPath = resolveInstalledPackagePath(root, root, name);
     if (!installedPath) {
-      if (declaredNode.optional === true || declaredNode.peerOptional === true) continue;
+      if (isOptionalDeclaredDependency(rootManifest, name)) continue;
       failures.push("declared dependency manifest is unresolved: " + name);
       continue;
     }
@@ -782,7 +771,7 @@ export function collectDependencyLicenses({
 
   const nodes = [];
   if (tree && typeof tree === "object" && !Array.isArray(tree)) {
-    collectDependencyNodes(tree, { root, nodes, failures, visited: new Set(), expandedEdges: new Set() }, root);
+    collectDependencyNodes(tree, { root, nodes, failures, visited: new Set() }, root);
   }
   const nodeIndex = new Map(nodes.map((node) => [resolve(node.path), node]));
 
