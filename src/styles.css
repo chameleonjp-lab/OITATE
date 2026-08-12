@@ -136,9 +136,45 @@ h1 {
   backdrop-filter: blur(7px);
 }
 
+.p8-check .diagnostics {
+  z-index: 30;
+}
+
 .diagnostics strong {
   color: #ffe085;
   grid-column: 1 / -1;
+}
+
+.p8-diagnostic-tools {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 5px;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgb(183 225 205 / 24%);
+  pointer-events: auto;
+}
+
+.p8-diagnostic-tools button {
+  min-height: 26px;
+  padding: 3px 7px;
+  border: 1px solid rgb(255 224 133 / 56%);
+  border-radius: 7px;
+  color: #102326;
+  background: #ffe085;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
+.p8-diagnostic-tools button + button {
+  color: #ddf5e6;
+  background: rgb(8 20 25 / 78%);
+}
+
+#p8-diagnostic-status {
+  color: #bfe8d4;
+  line-height: 1.35;
 }
 
 .p2-status {

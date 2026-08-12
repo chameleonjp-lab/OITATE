@@ -72,6 +72,12 @@ import {
   type P7Result,
   type P7StageId,
 } from "./game/p7-one-point-zero";
+import {
+  P8DiagnosticRecorder,
+  P8_DIAGNOSTIC_SCHEMA_VERSION,
+  type P8DiagnosticEvent,
+  type P8PerformanceSummary,
+} from "./quality/p8-diagnostics";
 import "./styles.css";
 
 interface P3PublicState {
@@ -252,6 +258,48 @@ interface P7PublicApi {
   e2e?: P7E2ETestHooks;
 }
 
+interface P8DiagnosticReport {
+  schemaVersion: typeof P8_DIAGNOSTIC_SCHEMA_VERSION;
+  generatedAt: string;
+  mode: "p1" | "p3" | "p4" | "p5" | "p6" | "p7";
+  environment: {
+    path: string;
+    userAgent: string;
+    language: string | null;
+    viewport: { width: number; height: number };
+    screen: { width: number; height: number };
+    devicePixelRatio: number;
+    maxTouchPoints: number;
+    hardwareConcurrency: number | null;
+    visibilityState: DocumentVisibilityState;
+  };
+  runtime: {
+    activePlaySeconds: number;
+    cameraInteractionSeconds: number;
+    paused: boolean;
+    portrait: boolean;
+    resumeRequired: boolean;
+    stageId: P7StageId | null;
+    signalFireCount: number;
+    p5DecisionUpdates: number;
+    fixedStep: FixedStepSimulation["diagnostics"];
+  };
+  performance: P8PerformanceSummary;
+  events: P8DiagnosticEvent[];
+  game: {
+    p1: ReturnType<Window["__OITATE_P1__"]["getState"]>;
+    p5: P5PublicState;
+    p6: P6PublicState;
+    p7: P7PublicState | null;
+  };
+}
+
+interface P8DiagnosticApi {
+  getReport: () => P8DiagnosticReport;
+  reset: () => void;
+  download: () => void;
+}
+
 interface P3PublicApi {
   getState: () => P3PublicState;
   retry: () => void;
@@ -273,6 +321,7 @@ declare global {
     __OITATE_P5__: P5PublicApi;
     __OITATE_P6__: P6PublicApi;
     __OITATE_P7__: P7PublicApi;
+    __OITATE_P8__?: P8DiagnosticApi;
   }
 }
 
@@ -339,19 +388,6 @@ root.innerHTML = `
         <span id="p7-stage-record-text">この面の記録 --</span>
       </section>
 
-      <aside class="diagnostics" data-testid="diagnostics" aria-label="開発用診断">
-        <strong>診断</strong>
-        <span id="diag-fps">FPS --</span>
-        <span id="diag-frame">フレーム -- ms</span>
-        <span id="diag-speed">速度 0.00</span>
-        <span id="diag-camera">手動カメラ 0.0秒 / 0%</span>
-        <span id="diag-owners">指 移:– 視:– 誘:– 威:–</span>
-        <span id="diag-cancel">解除 なし</span>
-        <span id="diag-rejected">競合拒否 0</span>
-        <span id="diag-signal">合図反応 -- ms</span>
-        <span id="diag-simulation">固定更新 遅延破棄 0.000秒</span>
-      </aside>
-
       <div class="world-label animal-label" aria-hidden="true">臆病種 × 6</div>
       <div class="world-label player-label" aria-hidden="true">主人公</div>
       <div class="signal-feedback" id="signal-feedback" aria-live="polite"></div>
@@ -391,6 +427,24 @@ root.innerHTML = `
         </button>
       </div>
     </div>
+
+      <aside class="diagnostics" data-testid="diagnostics" aria-label="開発用診断">
+        <strong>診断</strong>
+        <span id="diag-fps">FPS --</span>
+        <span id="diag-frame">フレーム -- ms</span>
+        <span id="diag-speed">速度 0.00</span>
+        <span id="diag-camera">手動カメラ 0.0秒 / 0%</span>
+        <span id="diag-owners">指 移:– 視:– 誘:– 威:–</span>
+        <span id="diag-cancel">解除 なし</span>
+        <span id="diag-rejected">競合拒否 0</span>
+        <span id="diag-signal">合図反応 -- ms</span>
+        <span id="diag-simulation">固定更新 遅延破棄 0.000秒</span>
+        <div class="p8-diagnostic-tools" id="p8-diagnostic-tools" data-testid="p8-diagnostic-tools" hidden>
+          <span id="p8-diagnostic-status">P8測定中：端末内だけで記録します</span>
+          <button type="button" data-action="p8-download">診断JSONを保存</button>
+          <button type="button" data-action="p8-reset">測定をリセット</button>
+        </div>
+      </aside>
 
     <section class="blocking-overlay" id="orientation-overlay" role="dialog" aria-modal="true" aria-labelledby="orientation-title" tabindex="-1" hidden>
       <div class="overlay-card">
@@ -638,7 +692,8 @@ const p4E2EEnabled = import.meta.env.DEV && p4Mode && query.get("p4-e2e") === "1
 const p5E2EEnabled = import.meta.env.DEV && p5Mode && query.get("p5-e2e") === "1";
 const p6E2EEnabled = import.meta.env.DEV && p6Mode && query.get("p6-e2e") === "1";
 const p7E2EEnabled = import.meta.env.DEV && p7Mode && query.get("p7-e2e") === "1";
-const debugEnabled = p1ProbeEnabled || query.get("debug") === "1";
+const p8CheckEnabled = import.meta.env.DEV && query.get("p8-check") === "1";
+const debugEnabled = p1ProbeEnabled || p8CheckEnabled || query.get("debug") === "1";
 signalControls.hidden = !p1ProbeEnabled;
 p2Status.hidden = p4Mode || p5WorldMode;
 p4Status.hidden = !p4Mode;
@@ -667,6 +722,7 @@ root.classList.toggle("p4-mode", p4Mode);
 root.classList.toggle("p5-mode", p5WorldMode);
 root.classList.toggle("p6-mode", p6Mode);
 root.classList.toggle("p7-mode", p7Mode);
+root.classList.toggle("p8-check", p8CheckEnabled);
 const diagnostics = {
   fps: required<HTMLElement>("#diag-fps"),
   frame: required<HTMLElement>("#diag-frame"),
@@ -678,7 +734,13 @@ const diagnostics = {
   signal: required<HTMLElement>("#diag-signal"),
   simulation: required<HTMLElement>("#diag-simulation"),
 };
+const p8DiagnosticTools = required<HTMLElement>("#p8-diagnostic-tools");
+const p8DiagnosticStatus = required<HTMLElement>("#p8-diagnostic-status");
+const p8DownloadButton = required<HTMLButtonElement>("[data-action='p8-download']");
+const p8ResetButton = required<HTMLButtonElement>("[data-action='p8-reset']");
+const p8Recorder = p8CheckEnabled ? new P8DiagnosticRecorder() : null;
 root.querySelector<HTMLElement>(".diagnostics")?.toggleAttribute("hidden", !debugEnabled);
+p8DiagnosticTools.hidden = !p8CheckEnabled;
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -1089,6 +1151,15 @@ let p7Result: P7Result | null = null;
 let p7ResultShown = false;
 let p7MenuOpen = false;
 
+function recordP8Event(type: string, detail?: string): void {
+  p8Recorder?.recordEvent(type, activePlaySeconds, detail);
+}
+
+recordP8Event(
+  "boot",
+  p7Mode ? "p7" : p6Mode ? "p6" : p5Mode ? "p5" : p4Mode ? "p4" : p1ProbeEnabled ? "p1" : "p3",
+);
+
 if (p5WorldMode) {
   simulationPosition.set(0, 0, 7.5);
   previousSimulationPosition.copy(simulationPosition);
@@ -1177,6 +1248,7 @@ function pulseP6Haptics(pattern: number | number[]): void {
 }
 
 function showResume(reason: string): void {
+  recordP8Event("resume-required", reason);
   paused = true;
   resumeRequired = true;
   pauseReason.textContent = reason;
@@ -1201,6 +1273,7 @@ const lifecycleReturnLabels: Record<LifecycleReturnReason, string> = {
 };
 
 function requestAutoPause(reason: LifecyclePauseReason): void {
+  recordP8Event("lifecycle-pause", reason);
   paused = true;
   resumeRequired = true;
   pauseReason.textContent = lifecyclePauseLabels[reason];
@@ -1403,6 +1476,7 @@ if (portrait) {
 
 resumeButton.addEventListener("click", () => {
   if (portrait) return;
+  recordP8Event("resume");
   input.clearAllInput("manual-clear");
   paused = false;
   resumeRequired = false;
@@ -1496,6 +1570,7 @@ function retryP3Prototype(): void {
 
 function showP4Result(): void {
   if (p4ResultShown) return;
+  recordP8Event("p4-result", p4Simulation.status);
   p4ResultShown = true;
   paused = true;
   resumeRequired = false;
@@ -1583,6 +1658,7 @@ function renderP7StageMenu(): void {
 
 function showP7StageMenu(initial = false): void {
   if (!p7Mode || portrait) return;
+  recordP8Event("p7-menu-open", initial ? "initial" : "manual");
   p7MenuOpen = true;
   p7ResultOverlay.hidden = true;
   p7ResultShown = false;
@@ -1598,6 +1674,7 @@ function showP7StageMenu(initial = false): void {
 
 function startP7Stage(stageId: P7StageId): void {
   if (!p7Mode || !isP7StageUnlocked(p7Progress, stageId)) return;
+  recordP8Event("p7-stage-start", String(stageId));
   p7StageId = stageId;
   p7MenuOpen = false;
   p7StageMenuOverlay.hidden = true;
@@ -1615,6 +1692,7 @@ function startP7Stage(stageId: P7StageId): void {
 
 function closeP7StageMenu(): void {
   if (!p7MenuOpen || p7ResultShown) return;
+  recordP8Event("p7-menu-close");
   p7MenuOpen = false;
   p7StageMenuOverlay.hidden = true;
   paused = false;
@@ -1648,6 +1726,7 @@ function populateP7Result(): void {
 
 function showP7Result(): void {
   if (p7ResultShown) return;
+  recordP8Event("p7-result", p5Simulation.status);
   p7ResultShown = true;
   paused = true;
   resumeRequired = false;
@@ -1665,6 +1744,7 @@ function showP7Result(): void {
 
 function retryP7Stage(): void {
   if (!p7ResultShown) return;
+  recordP8Event("p7-retry", String(p7StageId));
   p7ResultOverlay.hidden = true;
   resetP5Prototype();
   paused = false;
@@ -1720,6 +1800,7 @@ function populateP6Result(): void {
 
 function showP6Result(): void {
   if (p6ResultShown) return;
+  recordP8Event("p6-result", p5Simulation.status);
   p6ResultShown = true;
   paused = true;
   resumeRequired = false;
@@ -1737,6 +1818,7 @@ function showP6Result(): void {
 
 function retryP6Prototype(): void {
   if (!p6ResultShown) return;
+  recordP8Event("p6-retry");
   p6ResultOverlay.hidden = true;
   resetP5Prototype();
   paused = false;
@@ -1779,6 +1861,7 @@ function closeP6Settings(): void {
 
 function startP6Prototype(): void {
   if (!p6Mode || portrait) return;
+  recordP8Event("p6-start");
   p6IntroOverlay.hidden = true;
   p6SettingsButton.hidden = false;
   p6RecordBook = markP6IntroSeen(p6RecordBook);
@@ -2775,12 +2858,16 @@ function frame(now: number): void {
   const renderDeltaSeconds = Math.max(0, (now - lastFrameTime) / 1000);
   lastFrameTime = now;
   let interpolationAlpha = 0;
+  let droppedSimulationSeconds = 0;
 
   if (!paused && !portrait && !resumeRequired) {
-    interpolationAlpha = fixedStep.advance(renderDeltaSeconds, simulate).interpolationAlpha;
+    const update = fixedStep.advance(renderDeltaSeconds, simulate);
+    interpolationAlpha = update.interpolationAlpha;
+    droppedSimulationSeconds = update.droppedSeconds;
   } else {
     clearSimulationDebt();
   }
+  p8Recorder?.recordFrame(renderDeltaSeconds, droppedSimulationSeconds);
 
   player.position.lerpVectors(
     previousSimulationPosition,
@@ -2965,6 +3052,90 @@ function getP5PublicState(): P5PublicState {
   };
 }
 
+function p8DiagnosticMode(): P8DiagnosticReport["mode"] {
+  return p7Mode
+    ? "p7"
+    : p6Mode
+      ? "p6"
+      : p5Mode
+        ? "p5"
+        : p4Mode
+          ? "p4"
+          : p1ProbeEnabled
+            ? "p1"
+            : "p3";
+}
+
+function getP8DiagnosticReport(): P8DiagnosticReport {
+  return {
+    schemaVersion: P8_DIAGNOSTIC_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    mode: p8DiagnosticMode(),
+    environment: {
+      path: window.location.pathname,
+      userAgent: navigator.userAgent,
+      language: navigator.language ?? null,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      screen: { width: window.screen.width, height: window.screen.height },
+      devicePixelRatio: window.devicePixelRatio || 1,
+      maxTouchPoints: navigator.maxTouchPoints,
+      hardwareConcurrency: navigator.hardwareConcurrency ?? null,
+      visibilityState: document.visibilityState,
+    },
+    runtime: {
+      activePlaySeconds,
+      cameraInteractionSeconds,
+      paused,
+      portrait,
+      resumeRequired,
+      stageId: p7Mode ? p7StageId : null,
+      signalFireCount,
+      p5DecisionUpdates,
+      fixedStep: fixedStep.diagnostics,
+    },
+    performance: p8Recorder?.getPerformanceSummary() ?? {
+      sampleCount: 0,
+      minFrameMs: null,
+      averageFrameMs: null,
+      p95FrameMs: null,
+      maxFrameMs: null,
+      slowFrameCount: 0,
+      droppedSimulationSeconds: 0,
+    },
+    events: p8Recorder?.getEvents() ?? [],
+    game: {
+      p1: window.__OITATE_P1__.getState(),
+      p5: getP5PublicState(),
+      p6: getP6PublicState(),
+      p7: p7Mode ? getP7PublicState() : null,
+    },
+  };
+}
+
+function downloadP8DiagnosticReport(): void {
+  if (!p8CheckEnabled) return;
+  const report = getP8DiagnosticReport();
+  const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `oitate-p8-diagnostics-${new Date().toISOString().replaceAll(":", "-")}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  p8DiagnosticStatus.textContent = "診断JSONを保存しました。端末・性能の確認記録に添付できます";
+  recordP8Event("diagnostic-export");
+}
+
+p8DownloadButton.addEventListener("click", downloadP8DiagnosticReport);
+p8ResetButton.addEventListener("click", () => {
+  if (!p8CheckEnabled) return;
+  p8Recorder?.reset();
+  p8DiagnosticStatus.textContent = "P8測定をリセットしました。再開後の状態を記録します";
+  recordP8Event("diagnostic-reset");
+});
+
 window.__OITATE_P1__ = {
   getState: () => {
     const snapshot = input.getSnapshot();
@@ -3085,6 +3256,17 @@ const p7Api: P7PublicApi = {
     : {}),
 };
 window.__OITATE_P7__ = p7Api;
+
+if (p8CheckEnabled) {
+  window.__OITATE_P8__ = {
+    getReport: getP8DiagnosticReport,
+    reset: () => {
+      p8Recorder?.reset();
+      recordP8Event("diagnostic-reset");
+    },
+    download: downloadP8DiagnosticReport,
+  };
+}
 
 root.dataset.ready = "true";
 // Keep the P1 probe attribute for regression checks while exposing the P3
