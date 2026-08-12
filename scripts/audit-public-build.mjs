@@ -611,6 +611,34 @@ function requiredDependencyNames(manifest) {
   );
 }
 
+function optionalDependencyNames(manifest) {
+  const optionalPeers = dependencyNames(manifest, "peerDependencies").filter(
+    (dependencyName) => manifest?.peerDependenciesMeta?.[dependencyName]?.optional === true,
+  );
+  return [...new Set([
+    ...dependencyNames(manifest, "optionalDependencies"),
+    ...optionalPeers,
+  ])];
+}
+
+function resolveIndexedDependency({ root, node, nodeIndex, dependencyName }) {
+  const installedPath = resolveInstalledPackagePath(root, node?.path ?? root, dependencyName);
+  if (!installedPath) {
+    return { installedPath: null, present: false };
+  }
+  const indexedNode = nodeIndex?.get(resolve(installedPath));
+  const packageInfo = readPackageJson(installedPath);
+  return {
+    installedPath,
+    present: Boolean(
+      indexedNode
+      && indexedNode.name === dependencyName
+      && !packageInfo.error
+      && packageInfo.manifest?.name === dependencyName,
+    ),
+  };
+}
+
 function validateRequiredDependencyEdges({
   root,
   manifest,
@@ -619,21 +647,24 @@ function validateRequiredDependencyEdges({
   packageLabel,
   failures,
 }) {
+  for (const dependencyName of optionalDependencyNames(manifest)) {
+    const resolved = resolveIndexedDependency({ root, node, nodeIndex, dependencyName });
+    if (resolved.installedPath && !resolved.present) {
+      failures.push(
+        "optional dependency is missing from npm ls: "
+        + packageLabel + " -> " + dependencyName,
+      );
+    }
+  }
+
   const requiredNames = requiredDependencyNames(manifest);
   if (requiredNames.length === 0) return;
 
   const dependencyMap = node?.dependencies;
   if (dependencyMap === undefined || dependencyMap === null) {
     for (const dependencyName of requiredNames) {
-      const installedPath = resolveInstalledPackagePath(root, node?.path ?? root, dependencyName);
-      const indexedNode = installedPath ? nodeIndex?.get(resolve(installedPath)) : null;
-      const packageInfo = readPackageJson(installedPath);
-      if (
-        !indexedNode
-        || indexedNode.name !== dependencyName
-        || packageInfo.error
-        || packageInfo.manifest?.name !== dependencyName
-      ) {
+      const resolved = resolveIndexedDependency({ root, node, nodeIndex, dependencyName });
+      if (!resolved.present) {
         failures.push(
           "required dependency is missing from npm ls: "
           + packageLabel + " -> " + dependencyName,
@@ -648,16 +679,8 @@ function validateRequiredDependencyEdges({
   }
 
   for (const dependencyName of requiredNames) {
-    const installedPath = resolveInstalledPackagePath(root, node?.path ?? root, dependencyName);
-    const indexedNode = installedPath ? nodeIndex?.get(resolve(installedPath)) : null;
-    const packageInfo = readPackageJson(installedPath);
-    const hoistedNodeIsPresent = Boolean(
-      indexedNode
-      && indexedNode.name === dependencyName
-      && !packageInfo.error
-      && packageInfo.manifest?.name === dependencyName,
-    );
-    if (!hoistedNodeIsPresent) {
+    const resolved = resolveIndexedDependency({ root, node, nodeIndex, dependencyName });
+    if (!resolved.present) {
       failures.push(
         "required dependency is missing from npm ls: "
         + packageLabel + " -> " + dependencyName,
@@ -756,7 +779,13 @@ export function collectDependencyLicenses({
   for (const [name, scope] of directDefinitions) {
     const declaredNode = tree?.dependencies?.[name];
     if (!declaredNode) {
-      if (Object.prototype.hasOwnProperty.call(rootManifest.optionalDependencies ?? {}, name)) continue;
+      if (isOptionalDeclaredDependency(rootManifest, name)) {
+        const installedPath = resolveInstalledPackagePath(root, root, name);
+        if (installedPath) {
+          failures.push("optional dependency is missing from npm ls: " + name);
+        }
+        continue;
+      }
       failures.push("declared dependency is missing from npm ls: " + name);
       continue;
     }
