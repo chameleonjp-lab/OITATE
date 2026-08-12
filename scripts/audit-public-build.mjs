@@ -17,7 +17,7 @@ const ENTRYPOINTS = [
   { name: "game", path: "index.html", manifestSource: "index.html" },
   { name: "candidate", path: "candidate.html", manifestSource: null },
 ];
-const VITE_MANIFEST_PATHS = [".vite/manifest.json", "manifest.json"];
+const VITE_MANIFEST_PATHS = [".vite/manifest.json"];
 
 function slashPath(value) {
   return value.split(sep).join("/");
@@ -184,29 +184,93 @@ function collectReachableAssets(distDirectory, entryPath, availablePaths) {
   return { reachable, missingReferences };
 }
 
-function readViteManifest(distDirectory) {
-  const parseFailures = [];
-  for (const manifestPath of VITE_MANIFEST_PATHS) {
-    const absolutePath = join(distDirectory, manifestPath);
-    if (!existsSync(absolutePath)) continue;
-    try {
-      const manifest = JSON.parse(readFileSync(absolutePath, "utf8"));
-      if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
-        parseFailures.push("Vite manifest is not an object: " + manifestPath);
-        continue;
+function validateViteManifest(manifest, manifestPath) {
+  const failures = [];
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    return ["Vite manifest is not an object: " + manifestPath];
+  }
+
+  const entries = Object.entries(manifest);
+  if (entries.length === 0) failures.push("Vite manifest has no entries: " + manifestPath);
+
+  for (const [key, entry] of entries) {
+    const label = "Vite manifest entry " + key;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      failures.push(label + " is not an object");
+      continue;
+    }
+    if (typeof entry.file !== "string" || entry.file.trim() === "") {
+      failures.push(label + " must define file as a non-empty string");
+    }
+    for (const field of MANIFEST_ARRAY_FIELDS) {
+      if (entry[field] === undefined) continue;
+      if (
+        !Array.isArray(entry[field])
+        || entry[field].length === 0
+        || !entry[field].every((value) => typeof value === "string" && value.trim() !== "")
+      ) {
+        failures.push(label + " must define " + field + " as a non-empty string array");
       }
-      return { path: manifestPath, manifest, failures: [] };
-    } catch (error) {
-      parseFailures.push("invalid Vite manifest: " + manifestPath + " (" + error.message + ")");
+    }
+    if (entry.isEntry !== undefined && typeof entry.isEntry !== "boolean") {
+      failures.push(label + " isEntry must be boolean");
+    }
+    if (entry.src !== undefined && (typeof entry.src !== "string" || entry.src.trim() === "")) {
+      failures.push(label + " src must be a non-empty string");
     }
   }
-  return {
-    path: null,
-    manifest: null,
-    failures: parseFailures.length > 0
-      ? parseFailures
-      : ["missing Vite manifest: .vite/manifest.json or manifest.json"],
-  };
+
+  const hasIndexEntry = Object.prototype.hasOwnProperty.call(manifest, "index.html");
+  if (!hasIndexEntry) {
+    failures.push("Vite manifest missing required index.html entry");
+  } else if (
+    !manifest["index.html"]
+    || typeof manifest["index.html"] !== "object"
+    || Array.isArray(manifest["index.html"])
+  ) {
+    failures.push("Vite manifest index.html entry is not an object");
+  } else if (manifest["index.html"].isEntry !== true) {
+    failures.push("Vite manifest index.html entry must have isEntry=true");
+  }
+
+  for (const [key, entry] of entries) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    for (const field of ["imports", "dynamicImports"]) {
+      if (!Array.isArray(entry[field])) continue;
+      for (const importedKey of entry[field]) {
+        if (!Object.prototype.hasOwnProperty.call(manifest, importedKey)) {
+          failures.push("Vite manifest import target missing: " + key + " -> " + importedKey);
+        }
+      }
+    }
+  }
+  return [...new Set(failures)];
+}
+
+function readViteManifest(distDirectory) {
+  const manifestPath = VITE_MANIFEST_PATHS[0];
+  const absolutePath = join(distDirectory, manifestPath);
+  if (!existsSync(absolutePath)) {
+    return {
+      path: null,
+      manifest: null,
+      failures: ["missing Vite manifest: " + manifestPath],
+    };
+  }
+  try {
+    const manifest = JSON.parse(readFileSync(absolutePath, "utf8"));
+    return {
+      path: manifestPath,
+      manifest,
+      failures: validateViteManifest(manifest, manifestPath),
+    };
+  } catch (error) {
+    return {
+      path: manifestPath,
+      manifest: null,
+      failures: ["invalid Vite manifest: " + manifestPath + " (" + error.message + ")"],
+    };
+  }
 }
 
 function findManifestEntry(manifest, sourcePath) {
@@ -338,7 +402,7 @@ export function collectBuildAudit({
     budgetBytes,
     manifest: {
       path: manifestInfo.path,
-      valid: Boolean(manifestInfo.manifest),
+      valid: Boolean(manifestInfo.manifest) && manifestInfo.failures.length === 0,
       failures: manifestInfo.failures,
     },
     fileCount: fileInfos.length,
@@ -369,7 +433,10 @@ function normalizeLicense(value) {
 export { normalizeLicense };
 
 function isUnknownLicense(value) {
-  return !value || value.split(/\s+OR\s+/i).some((license) => license.trim().toUpperCase() === "UNKNOWN");
+  if (!value || typeof value !== "string") return true;
+  return /(?:^|[\s(])(?:unknown|undefined|null|n\/a|not\s+specified|noassertion)(?=$|[\s)])/i.test(
+    value.trim(),
+  );
 }
 
 function repositoryValue(value) {
@@ -458,6 +525,61 @@ function isUninstalledOptionalNode(node, parentPath, dependencyName) {
     return true;
   }
   return parentManifest.peerDependenciesMeta?.[dependencyName]?.optional === true;
+}
+
+function dependencyNames(manifest, field) {
+  const value = manifest?.[field];
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.keys(value);
+}
+
+function isOptionalDeclaredDependency(manifest, dependencyName) {
+  const optionalDependencies = manifest?.optionalDependencies;
+  if (
+    optionalDependencies
+    && typeof optionalDependencies === "object"
+    && !Array.isArray(optionalDependencies)
+    && Object.prototype.hasOwnProperty.call(optionalDependencies, dependencyName)
+  ) {
+    return true;
+  }
+  const peerMeta = manifest?.peerDependenciesMeta?.[dependencyName];
+  return peerMeta?.optional === true;
+}
+
+function requiredDependencyNames(manifest) {
+  const names = [
+    ...dependencyNames(manifest, "dependencies"),
+    ...dependencyNames(manifest, "peerDependencies"),
+  ];
+  return [...new Set(names)].filter(
+    (dependencyName) => !isOptionalDeclaredDependency(manifest, dependencyName),
+  );
+}
+
+function validateRequiredDependencyEdges({ manifest, node, packageLabel, failures }) {
+  const requiredNames = requiredDependencyNames(manifest);
+  if (requiredNames.length === 0) return;
+
+  const dependencyMap = node?.dependencies;
+  if (
+    !dependencyMap
+    || typeof dependencyMap !== "object"
+    || Array.isArray(dependencyMap)
+  ) {
+    failures.push("invalid dependency map for " + packageLabel);
+    return;
+  }
+
+  for (const dependencyName of requiredNames) {
+    const child = dependencyMap[dependencyName];
+    if (!child || typeof child !== "object" || Array.isArray(child)) {
+      failures.push(
+        "required dependency is missing from npm ls: "
+        + packageLabel + " -> " + dependencyName,
+      );
+    }
+  }
 }
 
 function collectDependencyNodes(
@@ -558,6 +680,15 @@ export function collectDependencyLicenses({
     directPaths.set(installedPath, { name, scope });
   }
 
+  if (tree && typeof tree === "object" && !Array.isArray(tree)) {
+    validateRequiredDependencyEdges({
+      manifest: rootManifest,
+      node: tree,
+      packageLabel: rootManifest.name ?? "root",
+      failures,
+    });
+  }
+
   const nodes = [];
   if (tree && typeof tree === "object" && !Array.isArray(tree)) {
     collectDependencyNodes(tree, { root, nodes, failures, visited: new Set() }, root);
@@ -589,6 +720,12 @@ export function collectDependencyLicenses({
 
     const name = manifest.name ?? node.name;
     const version = manifest.version ?? node.version ?? "UNKNOWN";
+    validateRequiredDependencyEdges({
+      manifest,
+      node,
+      packageLabel: name + "@" + version,
+      failures,
+    });
     const license = normalizeLicense(manifest.license ?? manifest.licenses);
     const packageKey = name + "@" + version + "@" + String(node.path);
     if (!packageKeys.has(packageKey)) {
