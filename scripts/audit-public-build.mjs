@@ -12,7 +12,7 @@ import { pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 
 export const P8_PUBLIC_AUDIT_SCHEMA_VERSION = 1;
-export const DEFAULT_INITIAL_LOAD_BUDGET_BYTES = 20 * 1024 * 1024;
+export const DEFAULT_INITIAL_LOAD_BUDGET_BYTES = 15 * 1024 * 1024;
 
 const ENTRYPOINTS = [
   { name: "game", path: "index.html" },
