@@ -75,49 +75,20 @@ function isAsciiWhitespace(character) {
     || character === "\r";
 }
 
-function findDataCandidateSeparator(value, start) {
-  for (let index = start; index < value.length; index += 1) {
-    if (value[index] !== ",") continue;
-
-    let cursor = index + 1;
-    while (cursor < value.length && isAsciiWhitespace(value[cursor])) cursor++;
-    if (
-      cursor === index + 1
-      || cursor >= value.length
-      || value[cursor] === ","
-    ) continue;
-
-    const urlStart = cursor;
-    while (
-      cursor < value.length
-      && !isAsciiWhitespace(value[cursor])
-      && value[cursor] !== ","
-    ) {
-      cursor++;
+function skipSrcsetDescriptors(value, cursor) {
+  let parentheses = 0;
+  while (cursor < value.length) {
+    const character = value[cursor];
+    if (character === "(") {
+      parentheses++;
+    } else if (character === ")" && parentheses > 0) {
+      parentheses--;
+    } else if (character === "," && parentheses === 0) {
+      return cursor + 1;
     }
-    if (cursor === urlStart) continue;
-
-    while (cursor < value.length && isAsciiWhitespace(value[cursor])) cursor++;
-    if (cursor >= value.length || value[cursor] === ",") return index;
-
-    const descriptorStart = cursor;
-    while (
-      cursor < value.length
-      && !isAsciiWhitespace(value[cursor])
-      && value[cursor] !== ","
-    ) {
-      cursor++;
-    }
-    const descriptor = value.slice(descriptorStart, cursor);
-    while (cursor < value.length && isAsciiWhitespace(value[cursor])) cursor++;
-    if (
-      /^(?:\d+(?:\.\d+)?[wx]|type=[^\s,]+)$/i.test(descriptor)
-      && (cursor >= value.length || value[cursor] === ",")
-    ) {
-      return index;
-    }
+    cursor++;
   }
-  return -1;
+  return cursor;
 }
 
 function extractSrcsetReferences(value) {
@@ -136,41 +107,22 @@ function extractSrcsetReferences(value) {
     if (cursor >= cleanValue.length) break;
 
     const start = cursor;
-    const remainder = cleanValue.slice(start);
-    if (/^data:/i.test(remainder)) {
-      const separator = findDataCandidateSeparator(cleanValue, start);
-      const whitespaceOffset = remainder.search(/[ \t\n\f\r]/);
-      const dataEnd = whitespaceOffset === -1
-        ? (separator === -1 ? cleanValue.length : separator)
-        : start + whitespaceOffset;
-      const dataReference = cleanValue.slice(start, dataEnd).trim();
-      if (dataReference) references.push(dataReference);
-      if (separator === -1) break;
-      cursor = separator + 1;
-      continue;
-    }
+    while (cursor < cleanValue.length && !isAsciiWhitespace(cleanValue[cursor])) cursor++;
 
-    const isAbsoluteUrl = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(remainder);
-    if (isAbsoluteUrl) {
-      while (cursor < cleanValue.length && !isAsciiWhitespace(cleanValue[cursor])) cursor++;
-      const reference = cleanValue.slice(start, cursor).trim();
-      if (reference) references.push(reference);
-      while (cursor < cleanValue.length && cleanValue[cursor] !== ",") cursor++;
-      if (cleanValue[cursor] === ",") cursor++;
-      continue;
+    let reference = cleanValue.slice(start, cursor);
+    let hasCandidateSeparator = false;
+    while (reference.endsWith(",")) {
+      reference = reference.slice(0, -1);
+      hasCandidateSeparator = true;
     }
-
-    while (
-      cursor < cleanValue.length
-      && !isAsciiWhitespace(cleanValue[cursor])
-      && cleanValue[cursor] !== ","
-    ) {
-      cursor++;
-    }
-    const reference = cleanValue.slice(start, cursor).trim();
     if (reference) references.push(reference);
-    while (cursor < cleanValue.length && cleanValue[cursor] !== ",") cursor++;
-    if (cleanValue[cursor] === ",") cursor++;
+
+    if (hasCandidateSeparator) {
+      while (cursor < cleanValue.length && isAsciiWhitespace(cleanValue[cursor])) cursor++;
+      continue;
+    }
+
+    cursor = skipSrcsetDescriptors(cleanValue, cursor);
   }
   return references;
 }
