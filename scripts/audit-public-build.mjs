@@ -69,11 +69,38 @@ function resolveAssetReference(fromPath, reference) {
 
 function extractSrcsetReferences(value) {
   const cleanValue = String(value).trim();
-  if (!cleanValue || /^data:/i.test(cleanValue)) return [];
-  return cleanValue
-    .split(",")
-    .map((candidate) => candidate.trim().split(/\s+/)[0])
-    .filter(Boolean);
+  if (!cleanValue) return [];
+
+  const references = [];
+  let cursor = 0;
+  while (cursor < cleanValue.length) {
+    while (cursor < cleanValue.length && /[\s,]/.test(cleanValue[cursor])) cursor++;
+    if (cursor >= cleanValue.length) break;
+
+    const remainder = cleanValue.slice(cursor);
+    if (/^data:/i.test(remainder)) {
+      const descriptorOffset = remainder.search(/\s/);
+      const urlEnd = descriptorOffset === -1
+        ? cleanValue.length
+        : cursor + descriptorOffset;
+      const dataReference = cleanValue.slice(cursor, urlEnd).trim();
+      if (dataReference) references.push(dataReference);
+      if (descriptorOffset === -1) break;
+      const nextComma = cleanValue.indexOf(",", urlEnd);
+      cursor = nextComma === -1 ? cleanValue.length : nextComma + 1;
+      continue;
+    }
+
+    const nextComma = cleanValue.indexOf(",", cursor);
+    const candidate = cleanValue.slice(
+      cursor,
+      nextComma === -1 ? cleanValue.length : nextComma,
+    );
+    const reference = candidate.trim().split(/\s+/)[0];
+    if (reference) references.push(reference);
+    cursor = nextComma === -1 ? cleanValue.length : nextComma + 1;
+  }
+  return references;
 }
 
 function extractHtmlAssetReferences(content) {
