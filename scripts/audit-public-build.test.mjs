@@ -118,7 +118,7 @@ test("fails on missing srcset, CSS import, poster, and SVG references", () => {
   writeFileSync(join(dist, "index.html"), "<script src=\"/assets/missing.js\"></script>");
   writeFileSync(
     join(dist, "candidate.html"),
-    "<link rel=\"stylesheet\" href=\"./assets/candidate.css\"><img src=\"./media/bad.svg\"><video poster=\"./media/missing-poster.png\"></video><img srcset=\"data:image/svg+xml,%3Csvg%3E 1x, ./media/missing-after-data.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, ./media/missing-descriptorless.png 2x\">",
+    "<link rel=\"stylesheet\" href=\"./assets/candidate.css\"><img src=\"./media/bad.svg\"><video poster=\"./media/missing-poster.png\"></video><img srcset=\"data:image/svg+xml,%3Csvg%3E 1x, ./media/missing-after-data.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, ./media/missing-descriptorless.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, missing.png 2x\">",
   );
   writeFileSync(join(dist, ".vite", "manifest.json"), JSON.stringify({
     "index.html": { src: "index.html", file: "assets/missing.js", isEntry: true },
@@ -132,6 +132,23 @@ test("fails on missing srcset, CSS import, poster, and SVG references", () => {
   assert.equal(report.failures.some((failure) => failure.includes("missing Vite manifest asset")), true);
   assert.equal(report.failures.some((failure) => failure.includes("missing-after-data.png")), true);
   assert.equal(report.failures.some((failure) => failure.includes("missing-descriptorless.png")), true);
+  assert.equal(report.failures.some((failure) => failure.includes("missing.png")), true);
+});
+
+test("does not turn a standalone data URL into a local reference", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-audit-"));
+  const dist = join(root, "dist");
+  mkdirSync(join(dist, ".vite"), { recursive: true });
+  mkdirSync(join(dist, "assets"), { recursive: true });
+  writeFileSync(join(dist, "index.html"), "<script type=\"module\" src=\"/assets/main.js\"></script>");
+  writeFileSync(join(dist, "candidate.html"), "<img srcset=\"data:image/svg+xml,%3Csvg%3E,%3Cpath%3E\">");
+  writeFileSync(join(dist, "assets", "main.js"), "console.log('ok');");
+  writeManifest(dist, {
+    "index.html": { src: "index.html", file: "assets/main.js", isEntry: true },
+  });
+
+  const report = collectBuildAudit({ distDirectory: dist });
+  assert.deepEqual(report.failures, []);
 });
 
 test("classifies direct and transitive packages with complete manifests", () => {
@@ -366,6 +383,173 @@ test("merges repeated npm tree stubs before validating required edges", () => {
   });
   assert.deepEqual(report.failures, []);
   assert.deepEqual(report.packages.map((item) => item.name), ["holder", "runtime", "transitive"]);
+});
+
+test("does not trust npm optional flags for required direct dependencies", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
+  writeFileSync(join(root, "package.json"), JSON.stringify({
+    dependencies: { required: "1.0.0" },
+  }));
+
+  const report = collectDependencyLicenses({
+    rootDirectory: root,
+    dependencyTree: {
+      path: root,
+      dependencies: {
+        required: {
+          name: "required",
+          version: "1.0.0",
+          optional: true,
+        },
+      },
+    },
+  });
+  assert.equal(
+    report.failures.some((failure) => failure.includes("required")),
+    true,
+  );
+});
+
+test("uses parent manifests as the only optional dependency source", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
+  const runtimePath = join(root, "node_modules", "runtime");
+  mkdirSync(runtimePath, { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({
+    dependencies: { runtime: "1.0.0" },
+    optionalDependencies: { optional: "1.0.0" },
+  }));
+  writeFileSync(join(runtimePath, "package.json"), JSON.stringify({
+    name: "runtime",
+    version: "1.0.0",
+    license: "MIT",
+    peerDependencies: { peer: "1.0.0" },
+    peerDependenciesMeta: { peer: { optional: true } },
+  }));
+
+  const report = collectDependencyLicenses({
+    rootDirectory: root,
+    dependencyTree: {
+      path: root,
+      dependencies: {
+        runtime: {
+          name: "runtime",
+          version: "1.0.0",
+          path: runtimePath,
+          dependencies: {
+            peer: { name: "peer", version: "1.0.0", peerOptional: true },
+          },
+        },
+        optional: {
+          name: "optional",
+          version: "1.0.0",
+          optional: true,
+        },
+      },
+    },
+  });
+  assert.deepEqual(report.failures, []);
+  assert.deepEqual(report.packages.map((item) => item.name), ["runtime"]);
+});
+
+test("walks later full occurrences of the same dependency edge", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
+  const holderAPath = join(root, "node_modules", "holder-a");
+  const holderBPath = join(root, "node_modules", "holder-b");
+  const runtimePath = join(root, "node_modules", "runtime");
+  const transitivePath = join(root, "node_modules", "transitive");
+  const grandchildPath = join(root, "node_modules", "grandchild");
+  for (const path of [holderAPath, holderBPath, runtimePath, transitivePath, grandchildPath]) {
+    mkdirSync(path, { recursive: true });
+  }
+  writeFileSync(join(root, "package.json"), JSON.stringify({
+    dependencies: { "holder-a": "1.0.0", "holder-b": "1.0.0" },
+  }));
+  writeFileSync(join(holderAPath, "package.json"), JSON.stringify({
+    name: "holder-a",
+    version: "1.0.0",
+    license: "MIT",
+    dependencies: { runtime: "1.0.0" },
+  }));
+  writeFileSync(join(holderBPath, "package.json"), JSON.stringify({
+    name: "holder-b",
+    version: "1.0.0",
+    license: "MIT",
+    dependencies: { runtime: "1.0.0" },
+  }));
+  writeFileSync(join(runtimePath, "package.json"), JSON.stringify({
+    name: "runtime",
+    version: "1.0.0",
+    license: "MIT",
+    dependencies: { transitive: "1.0.0" },
+  }));
+  writeFileSync(join(transitivePath, "package.json"), JSON.stringify({
+    name: "transitive",
+    version: "1.0.0",
+    license: "MIT",
+    dependencies: { grandchild: "1.0.0" },
+  }));
+  writeFileSync(join(grandchildPath, "package.json"), JSON.stringify({
+    name: "grandchild",
+    version: "1.0.0",
+    license: "MIT",
+  }));
+
+  const report = collectDependencyLicenses({
+    rootDirectory: root,
+    dependencyTree: {
+      path: root,
+      dependencies: {
+        "holder-a": {
+          name: "holder-a",
+          version: "1.0.0",
+          path: holderAPath,
+          dependencies: {
+            runtime: {
+              name: "runtime",
+              version: "1.0.0",
+              path: runtimePath,
+              dependencies: {
+                transitive: {
+                  name: "transitive",
+                  version: "1.0.0",
+                  path: transitivePath,
+                  dependencies: {},
+                },
+              },
+            },
+          },
+        },
+        "holder-b": {
+          name: "holder-b",
+          version: "1.0.0",
+          path: holderBPath,
+          dependencies: {
+            runtime: {
+              name: "runtime",
+              version: "1.0.0",
+              path: runtimePath,
+              dependencies: {
+                transitive: {
+                  name: "transitive",
+                  version: "1.0.0",
+                  path: transitivePath,
+                  dependencies: {
+                    grandchild: {
+                      name: "grandchild",
+                      version: "1.0.0",
+                      path: grandchildPath,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+  assert.deepEqual(report.failures, []);
+  assert.equal(report.packages.some((item) => item.name === "grandchild"), true);
 });
 
 test("fails closed on npm ls errors, problems, missing dependencies, and unknown licenses", () => {
