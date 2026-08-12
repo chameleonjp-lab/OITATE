@@ -13,7 +13,7 @@ test("renders the P8 candidate page without external media", async ({ page }) =>
   await expect(page.locator("img")).toHaveCount(4);
   const imageSources = await page.locator("img").evaluateAll((images) => images.map((image) => image.getAttribute("src")));
   expect(imageSources.every((source) => source?.startsWith("./media/"))).toBe(true);
-  await expect(page.getByRole("heading", { name: "公開前の確認事項" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "公開前の確認事項" })).toBeVisible();\n  await expect(page.getByRole("link", { name: "P8正式仕様" })).toHaveAttribute("href", "https://github.com/chameleonjp-lab/OITATE/blob/main/docs/P8_FORMAL_SPEC.md");\n  await expect(page.getByRole("link", { name: "更新履歴" })).toHaveAttribute("href", "https://github.com/chameleonjp-lab/OITATE/commits/main");
 });
 
 test("keeps the candidate page usable on a narrow viewport", async ({ page }) => {
