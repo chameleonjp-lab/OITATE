@@ -189,6 +189,48 @@ test("fails when a required transitive dependency is absent from npm ls", () => 
   );
 });
 
+test("accepts a hoisted required dependency when npm ls omits a nested map", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
+  const runtimePath = join(root, "node_modules", "runtime");
+  const transitivePath = join(root, "node_modules", "transitive");
+  mkdirSync(runtimePath, { recursive: true });
+  mkdirSync(transitivePath, { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({ dependencies: { runtime: "1.0.0" } }));
+  writeFileSync(join(runtimePath, "package.json"), JSON.stringify({
+    name: "runtime",
+    version: "1.0.0",
+    license: "MIT",
+    dependencies: { transitive: "2.0.0" },
+  }));
+  writeFileSync(join(transitivePath, "package.json"), JSON.stringify({
+    name: "transitive",
+    version: "2.0.0",
+    license: "Apache-2.0",
+  }));
+
+  const report = collectDependencyLicenses({
+    rootDirectory: root,
+    dependencyTree: {
+      path: root,
+      dependencies: {
+        runtime: {
+          name: "runtime",
+          version: "1.0.0",
+          path: runtimePath,
+        },
+        transitive: {
+          name: "transitive",
+          version: "2.0.0",
+          path: transitivePath,
+        },
+      },
+    },
+  });
+  assert.deepEqual(report.failures, []);
+  assert.deepEqual(report.unknownLicenses, []);
+  assert.deepEqual(report.packages.map((item) => item.name), ["runtime", "transitive"]);
+});
+
 test("fails closed on npm ls errors, problems, missing dependencies, and unknown licenses", () => {
   const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
   writeFileSync(join(root, "package.json"), JSON.stringify({ dependencies: { runtime: "1.0.0" } }));
