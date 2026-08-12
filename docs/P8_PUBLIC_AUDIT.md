@@ -6,7 +6,7 @@ P8-Cの監査は、公開候補版の技術情報をCIで同じ手順から再�
 
 依存関係を入れた後、本番ビルドと監査を実行します。
 
-\`\`\`bash
+```bash
 npm ci
 npm run typecheck
 npm test
@@ -15,20 +15,20 @@ npm run build
 npm run audit:public
 npm run e2e
 npm run e2e:preview
-\`\`\`
+```
 
 監査結果は次へ出ます。
 
-- \`artifacts/p8-public-audit/report.json\`
-- \`artifacts/p8-public-audit/report.md\`
+- `artifacts/p8-public-audit/report.json`
+- `artifacts/p8-public-audit/report.md`
 
-このディレクトリはリポジトリへコミットしません。GitHub Actionsでは、同じ結果を\`p8-public-audit\`というartifactへ保存します。生成物が作られなければ、CIのartifact保存も失敗します。
+このディレクトリはリポジトリへコミットしません。GitHub Actionsでは、同じ結果を`p8-public-audit`というartifactへ保存します。生成物が作られなければ、CIのartifact保存も失敗します。
 
 ## 確認内容
 
-- Viteの\`dist/.vite/manifest.json\`をバンドル資産の正本として、ゲーム入口のimport・CSS・assetsを確認する。
-- \`index.html\`と\`candidate.html\`から静的に到達できるファイルを追跡する。
-- HTMLの\`src\`、\`href\`、\`srcset\`、\`poster\`、SVGの参照、CSSの\`@import\`と\`url()\`を確認する。
+- Viteの`dist/.vite/manifest.json`をバンドル資産の正本として、ゲーム入口のimport・CSS・assetsを確認する。
+- `index.html`と`candidate.html`から静的に到達できるファイルを追跡する。
+- HTMLの`src`、`href`、`srcset`、`poster`、SVGの参照、CSSの`@import`と`url()`を確認する。
 - 入口ごとの展開後容量とgzip換算容量を、15MiBの初回読み込み上限と比べる。dist全体値は参考情報として残す。
 - npm ls --all --include=dev --jsonの終了コード、JSON、problems、宣言済み依存の欠落、実体のmanifest不整合を確認する。現在のOSに入らない任意のOS向け依存は、npmがoptionalとして示し、実体pathがない場合は「インストール済み」として記録しない。
 - 実際にインストールされた直接依存・開発依存・推移依存のパッケージ名、版、ライセンスを記録する。
@@ -38,7 +38,7 @@ Vite manifestがない、入口ごとのgzip換算容量が15MiBを超える、�
 
 ## E2Eの境界
 
-通常の\`npm run e2e\`は開発用の既存E2Eを実行します。追加の\`npm run e2e:preview\`は本番ビルドを\`vite preview\`で配信し、要求失敗、4xx/5xx、画像の読み込み失敗、console error、page errorを確認します。これは実機のSafariやiPadの確認の代わりではありません。
+通常の`npm run e2e`は開発用の既存E2Eを実行します。追加の`npm run e2e:preview`は本番ビルドを`vite preview`で配信し、要求失敗、4xx/5xx、画像の読み込み失敗、console error、page errorを確認します。これは実機のSafariやiPadの確認の代わりではありません。
 
 ## 証拠の境界
 
