@@ -2,7 +2,7 @@
 
 ## 1. ページ構成
 
-- `candidate.html` はViteの`public`配下から静的に配信する。
+- `public/candidate.html` をViteの`public`配下から静的に配信する。
 - CSSは`candidate.css`に分離し、外部フォントや外部CSSを読み込まない。
 - すべての画像は`public/media`内の自作SVGを相対参照する。
 - ゲーム本体への導線は`./?p7=1`とし、配信先のサブパスでも壊れない相対URLを使う。
