@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run src",
     "build": "vite build",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "test:audit": "node --test scripts/audit-public-build.test.mjs",
+    "audit:public": "node scripts/audit-public-build.mjs"
   },
   "dependencies": {
     "three": "0.185.1"
