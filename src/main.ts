@@ -2263,7 +2263,7 @@ function runP7CompletionReplay(): void {
   resetP5Prototype();
   paused = false;
   resumeRequired = false;
-  for (const animal of p5Simulation.animals) {
+  for (const animal of p5Simulation.animals.filter((candidate) => candidate.type === "predator")) {
     const pen = p5Simulation.pens[animal.type];
     animal.x = pen.centerX;
     animal.z = pen.entranceZ - 0.3;
@@ -2285,8 +2285,22 @@ function runP7CompletionReplay(): void {
       reason: "deterministic-completion-fixture",
     });
   }
-  for (let step = 0; step < 40 && p5Simulation.status === "active"; step += 1) {
-    stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
+  for (const animal of p5Simulation.animals.filter((candidate) => candidate.type !== "predator")) {
+    const pen = p5Simulation.pens[animal.type];
+    animal.x = pen.centerX;
+    animal.z = pen.entranceZ - 0.3;
+    animal.previousX = animal.x;
+    animal.previousZ = animal.z;
+    animal.phase = "enteringPen";
+    animal.lifeState = "active";
+    animal.insidePen = false;
+    for (let step = 0; step < 40 && animal.lifeState === "active"; step += 1) {
+      stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
+    }
+    const completedAnimal = p5Simulation.animals.find((candidate) => candidate.id === animal.id);
+    if (completedAnimal?.lifeState !== "captured") {
+      throw new Error(`P7 E2E completion fixture did not capture ${animal.id}`);
+    }
   }
   clearSimulationDebt();
 }
