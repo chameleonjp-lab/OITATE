@@ -585,16 +585,25 @@ function requiredDependencyNames(manifest) {
   );
 }
 
-function validateRequiredDependencyEdges({ manifest, node, packageLabel, failures }) {
+function validateRequiredDependencyEdges({ root, manifest, node, packageLabel, failures }) {
   const requiredNames = requiredDependencyNames(manifest);
   if (requiredNames.length === 0) return;
 
   const dependencyMap = node?.dependencies;
-  if (
-    !dependencyMap
-    || typeof dependencyMap !== "object"
-    || Array.isArray(dependencyMap)
-  ) {
+  if (dependencyMap === undefined || dependencyMap === null) {
+    for (const dependencyName of requiredNames) {
+      const installedPath = resolveInstalledPackagePath(root, node?.path ?? root, dependencyName);
+      const packageInfo = readPackageJson(installedPath);
+      if (packageInfo.error || packageInfo.manifest?.name !== dependencyName) {
+        failures.push(
+          "required dependency cannot be resolved from npm installation: "
+          + packageLabel + " -> " + dependencyName,
+        );
+      }
+    }
+    return;
+  }
+  if (typeof dependencyMap !== "object" || Array.isArray(dependencyMap)) {
     failures.push("invalid dependency map for " + packageLabel);
     return;
   }
@@ -710,6 +719,7 @@ export function collectDependencyLicenses({
 
   if (tree && typeof tree === "object" && !Array.isArray(tree)) {
     validateRequiredDependencyEdges({
+      root,
       manifest: rootManifest,
       node: tree,
       packageLabel: rootManifest.name ?? "root",
@@ -749,6 +759,7 @@ export function collectDependencyLicenses({
     const name = manifest.name ?? node.name;
     const version = manifest.version ?? node.version ?? "UNKNOWN";
     validateRequiredDependencyEdges({
+      root,
       manifest,
       node,
       packageLabel: name + "@" + version,
