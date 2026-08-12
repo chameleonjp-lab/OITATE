@@ -57,6 +57,21 @@ import {
   type P6Result,
   type P6Settings,
 } from "./game/p6-vertical-slice-completion";
+import {
+  calculateP7Result,
+  getP7Stage,
+  getP7StageRecord,
+  isP7StageUnlocked,
+  readP7Progress,
+  updateP7Progress,
+  writeP7Progress,
+  P7_STAGE_IDS,
+  P7_STAGES,
+  type P7Progress,
+  type P7RecordMode,
+  type P7Result,
+  type P7StageId,
+} from "./game/p7-one-point-zero";
 import "./styles.css";
 
 interface P3PublicState {
@@ -215,6 +230,28 @@ interface P6PublicApi {
   e2e?: P6E2ETestHooks;
 }
 
+interface P7PublicState {
+  stageId: P7StageId;
+  status: P5SimulationState["status"];
+  failureReason: P5FailureReason;
+  menuVisible: boolean;
+  resultVisible: boolean;
+  progress: P7Progress;
+  result: P7Result | null;
+}
+
+interface P7E2ETestHooks {
+  openStage: (stageId: P7StageId) => void;
+  runCompletionReplay: () => void;
+}
+
+interface P7PublicApi {
+  getState: () => P7PublicState;
+  retry: () => void;
+  openMenu: () => void;
+  e2e?: P7E2ETestHooks;
+}
+
 interface P3PublicApi {
   getState: () => P3PublicState;
   retry: () => void;
@@ -235,6 +272,7 @@ declare global {
     __OITATE_P4__: P4PublicApi;
     __OITATE_P5__: P5PublicApi;
     __OITATE_P6__: P6PublicApi;
+    __OITATE_P7__: P7PublicApi;
   }
 }
 
@@ -257,9 +295,11 @@ root.innerHTML = `
           <p class="eyebrow p2-eyebrow">P3 最初に遊べる版</p>
           <p class="eyebrow p5-eyebrow">P5 縦切り統合版</p>
           <p class="eyebrow p6-eyebrow">P6 縦切り完成版</p>
+          <p class="eyebrow p7-eyebrow">P7 1.0 内容完成</p>
           <h1>臆病種を囲いへ</h1>
         </div>
         <div class="top-actions">
+          <button class="icon-button p7-stage-menu-button" id="p7-stage-menu-button" type="button" aria-label="面を選ぶ" hidden>☰</button>
           <button class="icon-button p6-settings-button" id="p6-settings-button" type="button" aria-label="設定" hidden>⚙</button>
           <button class="icon-button" type="button" data-action="pause" aria-label="一時停止">Ⅱ</button>
         </div>
@@ -290,6 +330,13 @@ root.innerHTML = `
         <span id="p6-status-text">説明を確認して開始します</span>
         <span id="p6-time-text">操作時間 0:00　標準</span>
         <span id="p6-record-text">最高記録 --</span>
+      </section>
+
+      <section class="p7-status" data-testid="p7-status" aria-live="polite" aria-label="P7 1.0内容完成の状態" hidden>
+        <strong id="p7-stage-center">面を選んで開始します</strong>
+        <span id="p7-stage-objective">練習または6面の進行を選べます</span>
+        <span id="p7-progress-text">進行 0 / 6</span>
+        <span id="p7-stage-record-text">この面の記録 --</span>
       </section>
 
       <aside class="diagnostics" data-testid="diagnostics" aria-label="開発用診断">
@@ -407,6 +454,17 @@ root.innerHTML = `
       </div>
     </section>
 
+    <section class="blocking-overlay p7-overlay" id="p7-stage-menu-overlay" role="dialog" aria-modal="true" aria-labelledby="p7-stage-menu-title" tabindex="-1" hidden>
+      <div class="overlay-card p7-stage-menu-card">
+        <p class="eyebrow">P7 1.0 内容完成</p>
+        <h2 id="p7-stage-menu-title">遊ぶ面を選ぶ</h2>
+        <p id="p7-stage-menu-summary">面ごとに一つの中心概念を確認します。クリアすると次の面が開きます。</p>
+        <div id="p7-stage-list" class="p7-stage-list" aria-label="P7の面一覧"></div>
+        <p id="p7-fourth-gate" class="p7-fourth-gate">第4の動物：6面の受入確認後に検証</p>
+        <button class="text-button" type="button" data-action="p7-menu-close" hidden>ゲームへ戻る</button>
+      </div>
+    </section>
+
     <section class="blocking-overlay p6-overlay" id="p6-settings-overlay" role="dialog" aria-modal="true" aria-labelledby="p6-settings-title" tabindex="-1" hidden>
       <div class="overlay-card p6-settings-card">
         <p class="eyebrow">P6 設定</p>
@@ -440,6 +498,28 @@ root.innerHTML = `
         <div class="p6-result-actions">
           <button class="resume-button" type="button" data-action="p6-retry">もう一度試す</button>
           <button class="text-button" type="button" data-action="p6-result-settings">設定</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="blocking-overlay p7-overlay" id="p7-result-overlay" role="dialog" aria-modal="true" aria-labelledby="p7-result-title" tabindex="-1" hidden>
+      <div class="overlay-card p7-result-card">
+        <p class="eyebrow" id="p7-result-eyebrow">P7 1.0 内容完成</p>
+        <h2 id="p7-result-title">結果</h2>
+        <p id="p7-result-score" class="p6-result-score">未クリア</p>
+        <p id="p7-result-grade" class="p6-result-grade">評価 —</p>
+        <p id="p7-result-title-text" class="p6-result-title-text">次の行動を確認してください</p>
+        <div class="p6-score-grid" aria-label="P7得点内訳">
+          <div><span>安全</span><b id="p7-score-safety">—</b><small>/ 40,000</small></div>
+          <div><span>統率</span><b id="p7-score-coordination">—</b><small>/ 25,000</small></div>
+          <div><span>危険管理</span><b id="p7-score-judgement">—</b><small>/ 20,000</small></div>
+          <div><span>時間</span><b id="p7-score-time">—</b><small>/ 15,000</small></div>
+        </div>
+        <p id="p7-result-advice" class="p6-result-advice">次回の助言</p>
+        <p id="p7-result-record" class="p6-result-record">記録なし</p>
+        <div class="p6-result-actions">
+          <button class="resume-button" type="button" data-action="p7-retry">この面をもう一度</button>
+          <button class="text-button" type="button" data-action="p7-select-stage">面を選ぶ</button>
         </div>
       </div>
     </section>
@@ -519,18 +599,45 @@ const p6ResultAdvice = required<HTMLElement>("#p6-result-advice");
 const p6ResultRecord = required<HTMLElement>("#p6-result-record");
 const p6RetryButton = required<HTMLButtonElement>("[data-action='p6-retry']");
 const p6ResultSettingsButton = required<HTMLButtonElement>("[data-action='p6-result-settings']");
+const p7Status = required<HTMLElement>(".p7-status");
+const p7StageCenter = required<HTMLElement>("#p7-stage-center");
+const p7StageObjective = required<HTMLElement>("#p7-stage-objective");
+const p7ProgressText = required<HTMLElement>("#p7-progress-text");
+const p7StageRecordText = required<HTMLElement>("#p7-stage-record-text");
+const p7StageMenuButton = required<HTMLButtonElement>("#p7-stage-menu-button");
+const p7StageMenuOverlay = required<HTMLElement>("#p7-stage-menu-overlay");
+const p7StageMenuSummary = required<HTMLElement>("#p7-stage-menu-summary");
+const p7StageList = required<HTMLElement>("#p7-stage-list");
+const p7FourthGate = required<HTMLElement>("#p7-fourth-gate");
+const p7MenuCloseButton = required<HTMLButtonElement>("[data-action='p7-menu-close']");
+const p7ResultOverlay = required<HTMLElement>("#p7-result-overlay");
+const p7ResultEyebrow = required<HTMLElement>("#p7-result-eyebrow");
+const p7ResultTitle = required<HTMLElement>("#p7-result-title");
+const p7ResultScore = required<HTMLElement>("#p7-result-score");
+const p7ResultGrade = required<HTMLElement>("#p7-result-grade");
+const p7ResultTitleText = required<HTMLElement>("#p7-result-title-text");
+const p7ScoreSafety = required<HTMLElement>("#p7-score-safety");
+const p7ScoreCoordination = required<HTMLElement>("#p7-score-coordination");
+const p7ScoreJudgement = required<HTMLElement>("#p7-score-judgement");
+const p7ScoreTime = required<HTMLElement>("#p7-score-time");
+const p7ResultAdvice = required<HTMLElement>("#p7-result-advice");
+const p7ResultRecord = required<HTMLElement>("#p7-result-record");
+const p7RetryButton = required<HTMLButtonElement>("[data-action='p7-retry']");
+const p7SelectStageButton = required<HTMLButtonElement>("[data-action='p7-select-stage']");
 const signalControls = required<HTMLElement>(".signal-controls");
 const query = new URLSearchParams(window.location.search);
 const p1ProbeEnabled = query.get("p1-probe") === "1";
-const p6Mode = query.get("p6") === "1";
-const p5Mode = !p6Mode && query.get("p5") === "1";
-const p5WorldMode = p5Mode || p6Mode;
+const p7Mode = query.get("p7") === "1";
+const p6Mode = !p7Mode && query.get("p6") === "1";
+const p5Mode = !p7Mode && !p6Mode && query.get("p5") === "1";
+const p5WorldMode = p5Mode || p6Mode || p7Mode;
 const p4Mode = !p5WorldMode && query.get("p4") === "1";
 const p3E2EEnabled = import.meta.env.DEV
   && (query.get("p3-e2e") === "1" || query.get("p2-e2e") === "1");
 const p4E2EEnabled = import.meta.env.DEV && p4Mode && query.get("p4-e2e") === "1";
 const p5E2EEnabled = import.meta.env.DEV && p5Mode && query.get("p5-e2e") === "1";
 const p6E2EEnabled = import.meta.env.DEV && p6Mode && query.get("p6-e2e") === "1";
+const p7E2EEnabled = import.meta.env.DEV && p7Mode && query.get("p7-e2e") === "1";
 const debugEnabled = p1ProbeEnabled || query.get("debug") === "1";
 signalControls.hidden = !p1ProbeEnabled;
 p2Status.hidden = p4Mode || p5WorldMode;
@@ -539,9 +646,13 @@ p4Controls.hidden = !p4Mode;
 p5Status.hidden = !p5Mode;
 p5Controls.hidden = !p5WorldMode;
 p6Status.hidden = !p6Mode;
-p6SettingsButton.hidden = !p6Mode;
+p7Status.hidden = !p7Mode;
+p6SettingsButton.hidden = !p6Mode && !p7Mode;
+p7StageMenuButton.hidden = !p7Mode;
 required<HTMLElement>("h1").textContent = p6Mode
   ? "3種類を囲いへ"
+  : p7Mode
+    ? "1.0を遊ぶ"
   : p5Mode
     ? "3種類を囲いへ"
     : p4Mode
@@ -551,9 +662,11 @@ root.querySelector<HTMLElement>(".p1-eyebrow")?.toggleAttribute("hidden", !p1Pro
 root.querySelector<HTMLElement>(".p2-eyebrow")?.toggleAttribute("hidden", p4Mode || p5WorldMode);
 root.querySelector<HTMLElement>(".p5-eyebrow")?.toggleAttribute("hidden", !p5Mode);
 root.querySelector<HTMLElement>(".p6-eyebrow")?.toggleAttribute("hidden", !p6Mode);
+root.querySelector<HTMLElement>(".p7-eyebrow")?.toggleAttribute("hidden", !p7Mode);
 root.classList.toggle("p4-mode", p4Mode);
 root.classList.toggle("p5-mode", p5WorldMode);
 root.classList.toggle("p6-mode", p6Mode);
+root.classList.toggle("p7-mode", p7Mode);
 const diagnostics = {
   fps: required<HTMLElement>("#diag-fps"),
   frame: required<HTMLElement>("#diag-frame"),
@@ -944,7 +1057,11 @@ let p3Simulation: P3SimulationState = createP3Simulation();
 const P3_DECISION_SECONDS = P3_TUNING.decisionStepSeconds;
 let p4Simulation: P4SimulationState = createP4Simulation();
 const P4_DECISION_SECONDS = P4_TUNING.decisionStepSeconds;
-let p5Simulation: P5SimulationState = createP5Simulation();
+let p7Progress = readP7Progress();
+let p7StageId: P7StageId = 0;
+let p5Simulation: P5SimulationState = createP5Simulation(
+  p7Mode ? getP7Stage(p7StageId).simulation : undefined,
+);
 const P5_DECISION_SECONDS = P5_TUNING.decisionStepSeconds;
 const PLAYER_COLLISION_RADIUS = 0.52;
 let p3DecisionAccumulator = 0;
@@ -967,6 +1084,10 @@ let p6Result: P6Result | null = null;
 let p6ResultShown = false;
 let p6SettingsReturnToResult = false;
 let p6AudioContext: AudioContext | null = null;
+let p7Metrics = createP6RunMetrics(p6Settings.assistedMode);
+let p7Result: P7Result | null = null;
+let p7ResultShown = false;
+let p7MenuOpen = false;
 
 if (p5WorldMode) {
   simulationPosition.set(0, 0, 7.5);
@@ -1025,7 +1146,7 @@ function unblockInteraction(): void {
 
 
 function playP6Tone(kind: "start" | "signal" | "danger" | "success" | "failure"): void {
-  if (!p6Mode || !p6Settings.soundEnabled) return;
+  if ((!p6Mode && !p7Mode) || !p6Settings.soundEnabled) return;
   const AudioContextConstructor = window.AudioContext;
   if (!AudioContextConstructor) return;
   p6AudioContext ??= new AudioContextConstructor();
@@ -1051,7 +1172,7 @@ function playP6Tone(kind: "start" | "signal" | "danger" | "success" | "failure")
 }
 
 function pulseP6Haptics(pattern: number | number[]): void {
-  if (!p6Mode || !p6Settings.vibrationEnabled || !("vibrate" in navigator)) return;
+  if ((!p6Mode && !p7Mode) || !p6Settings.vibrationEnabled || !("vibrate" in navigator)) return;
   navigator.vibrate(pattern);
 }
 
@@ -1129,7 +1250,8 @@ function pulseP4ThreatSignal(): void {
 }
 
 function pulseP5Signal(signal: "guidance" | "threat"): void {
-  if (!p5WorldMode || paused || portrait || (p6Mode ? p6ResultShown : p5ResultShown)) return;
+  if (!p5WorldMode || paused || portrait
+    || (p7Mode ? p7ResultShown : p6Mode ? p6ResultShown : p5ResultShown)) return;
   if (signal === "guidance") p5PendingGuidanceSignal = true;
   else p5PendingThreatSignal = true;
   const button = signal === "guidance" ? p5GuidanceButton : p5ThreatButton;
@@ -1144,7 +1266,7 @@ function pulseP5Signal(signal: "guidance" | "threat"): void {
   void feedback.offsetWidth;
   feedback.classList.add("is-visible");
   window.setTimeout(() => feedback.classList.remove("is-visible"), 520);
-  if (p6Mode) {
+  if (p6Mode || p7Mode) {
     playP6Tone(signal === "guidance" ? "signal" : "danger");
     pulseP6Haptics(signal === "guidance" ? 12 : [0, 35, 35]);
   }
@@ -1183,10 +1305,22 @@ p6SkipIntroButton.addEventListener("click", startP6Prototype);
 p6SettingsCloseButton.addEventListener("click", closeP6Settings);
 p6ResultSettingsButton.addEventListener("click", () => openP6Settings(true));
 p6RetryButton.addEventListener("click", retryP6Prototype);
+p7StageMenuButton.addEventListener("click", () => showP7StageMenu(false));
+p7RetryButton.addEventListener("click", retryP7Stage);
+p7SelectStageButton.addEventListener("click", () => showP7StageMenu(true));
+p7MenuCloseButton.addEventListener("click", closeP7StageMenu);
+p7StageList.addEventListener("click", (event) => {
+  const target = event.target instanceof Element
+    ? event.target.closest<HTMLButtonElement>("[data-p7-stage]")
+    : null;
+  if (!target || target.disabled) return;
+  const stageId = Number(target.dataset.p7Stage);
+  if (stageId >= 0 && stageId <= 6) startP7Stage(stageId as P7StageId);
+});
 
 function updateP6Settings(): void {
   const requestedAssistedMode = p6AssistToggle.checked;
-  const restartP6Run = p6Mode
+  const restartP6Run = (p6Mode || p7Mode)
     && p5Simulation.status === "active"
     && p5DecisionUpdates > 0
     && requestedAssistedMode !== p6Settings.assistedMode;
@@ -1202,9 +1336,11 @@ function updateP6Settings(): void {
     resetP5Prototype();
   } else {
     p6Metrics.assistedMode = p6Settings.assistedMode;
+    p7Metrics.assistedMode = p6Settings.assistedMode;
   }
   syncP6SettingsControls();
-  updateP6Status();
+  if (p7Mode) updateP7Status();
+  else updateP6Status();
 }
 
 p6SoundToggle.addEventListener("change", updateP6Settings);
@@ -1244,6 +1380,18 @@ if (p6Mode && !portrait) {
   syncP6SettingsControls();
   updateP6Status();
   blockInteraction(p6StartButton);
+}
+
+if (p7Mode && !portrait) {
+  paused = true;
+  resumeRequired = false;
+  p7StageMenuOverlay.hidden = false;
+  p7MenuOpen = true;
+  p7MenuCloseButton.hidden = true;
+  syncP6SettingsControls();
+  updateP7Status();
+  renderP7StageMenu();
+  blockInteraction(p7StageList.querySelector<HTMLButtonElement>("button:not(:disabled)") ?? p7StageMenuButton);
 }
 
 if (portrait) {
@@ -1294,7 +1442,9 @@ function resetP4Prototype(): void {
 }
 
 function resetP5Prototype(): void {
-  p5Simulation = createP5Simulation();
+  p5Simulation = createP5Simulation(
+    p7Mode ? getP7Stage(p7StageId).simulation : undefined,
+  );
   p5DecisionAccumulator = 0;
   p5DecisionUpdates = 0;
   p5PendingGuidanceSignal = false;
@@ -1303,13 +1453,18 @@ function resetP5Prototype(): void {
   p6Result = null;
   p6ResultShown = false;
   p6Metrics = createP6RunMetrics(p6Settings.assistedMode);
+  p7Result = null;
+  p7ResultShown = false;
+  p7Metrics = createP6RunMetrics(p6Settings.assistedMode);
   p5StatusText.textContent = "臆病種は接近、追従種は誘導音、危険種は威嚇音に反応します";
   p5CountText.textContent = "臆病 0 / 6　追従 0 / 4　危険 0 / 1";
   p5DangerText.textContent = "危険種：索敵　保護対象：待機中";
   p5RouteText.textContent = "安全な経路 ○　速い経路 ○";
   p6ResultOverlay.hidden = true;
+  p7ResultOverlay.hidden = true;
   p6IntroOverlay.hidden = true;
-  updateP6Status();
+  if (p7Mode) updateP7Status();
+  else updateP6Status();
   simulationPosition.set(0, 0, 7.5);
   previousSimulationPosition.copy(simulationPosition);
   player.position.copy(simulationPosition);
@@ -1364,6 +1519,154 @@ function retryP4Prototype(): void {
   if (!p4ResultShown) return;
   p4ResultOverlay.hidden = true;
   resetP4Prototype();
+  paused = false;
+  resumeRequired = false;
+  if (interactionLayer.inert) unblockInteraction();
+  lastFrameTime = performance.now();
+}
+
+function p7ModeName(): P7RecordMode {
+  return getP7Stage(p7StageId).isPractice
+    ? "practice"
+    : p6Settings.assistedMode ? "assisted" : "standard";
+}
+
+function updateP7Status(): void {
+  const stage = getP7Stage(p7StageId);
+  const record = getP7StageRecord(p7Progress, p7StageId, p7ModeName());
+  const completedCount = P7_STAGE_IDS.filter(
+    (stageId) => stageId > 0 && p7Progress.completedStageIds.includes(stageId),
+  ).length;
+  const counts = getP5CapturedCounts();
+  p7StageCenter.textContent = `${stage.title}　${stage.center}`;
+  p7StageObjective.textContent = p5Simulation.status === "completed"
+    ? "面の条件を満たしました。結果を確認します"
+    : p5Simulation.status === "failed"
+      ? "失敗理由を確認し、次に変える行動を選びます"
+      : stage.objective;
+  p7ProgressText.textContent = `進行 ${completedCount} / 6　収容 臆病 ${counts.coward} / ${p5Simulation.scenario.cowardCount}　追従 ${counts.follower} / ${p5Simulation.scenario.followerCount}　危険 ${counts.predator} / ${p5Simulation.scenario.predatorCount}`;
+  p7StageRecordText.textContent = record
+    ? `${p7SettingsLabel()}の最高記録 ${record.bestScore.toLocaleString("ja-JP")}点 / ${record.bestGrade}`
+    : `${p7SettingsLabel()}の記録 --`;
+}
+
+function p7SettingsLabel(): string {
+  return getP7Stage(p7StageId).isPractice
+    ? "練習"
+    : p6Settings.assistedMode ? "補助あり" : "標準";
+}
+
+function renderP7StageMenu(): void {
+  const completedCount = P7_STAGE_IDS.filter(
+    (stageId) => stageId > 0 && p7Progress.completedStageIds.includes(stageId),
+  ).length;
+  p7StageMenuSummary.textContent = `${completedCount} / 6面をクリア。各面は中心概念を一つに絞り、クリアすると次の面が開きます。`;
+  p7FourthGate.textContent = p7Progress.fourthAnimalGate === "eligible"
+    ? "第4の動物：6面クリア後の検証候補。通常の1.0面にはまだ追加しません。"
+    : "第4の動物：6面の受入確認後に検証";
+  p7StageList.innerHTML = P7_STAGES.map((stage) => {
+    const unlocked = isP7StageUnlocked(p7Progress, stage.id);
+    const completed = p7Progress.completedStageIds.includes(stage.id);
+    const current = stage.id === p7StageId;
+    const status = completed ? "クリア済み" : unlocked ? "開始できます" : "未解放";
+    return `<article class="p7-stage-card${current ? " is-current" : ""}${completed ? " is-completed" : ""}">
+      <button type="button" data-p7-stage="${stage.id}" ${unlocked ? "" : "disabled"} aria-label="${stage.title} ${status}">
+        <span class="p7-stage-card-title">${stage.title}</span>
+        <small>${stage.center}</small>
+        <em>${status}</em>
+      </button>
+      <p>${stage.description}</p>
+      <strong>${stage.objective}</strong>
+    </article>`;
+  }).join("");
+}
+
+function showP7StageMenu(initial = false): void {
+  if (!p7Mode || portrait) return;
+  p7MenuOpen = true;
+  p7ResultOverlay.hidden = true;
+  p7ResultShown = false;
+  p7StageMenuOverlay.hidden = false;
+  p7MenuCloseButton.hidden = initial;
+  paused = true;
+  resumeRequired = false;
+  input.clearAllInput("manual-clear");
+  renderP7StageMenu();
+  const firstAvailable = p7StageList.querySelector<HTMLButtonElement>("button:not(:disabled)");
+  blockInteraction(firstAvailable ?? p7StageMenuButton);
+}
+
+function startP7Stage(stageId: P7StageId): void {
+  if (!p7Mode || !isP7StageUnlocked(p7Progress, stageId)) return;
+  p7StageId = stageId;
+  p7MenuOpen = false;
+  p7StageMenuOverlay.hidden = true;
+  p7MenuCloseButton.hidden = true;
+  resetP5Prototype();
+  paused = false;
+  resumeRequired = false;
+  input.clearAllInput("manual-clear");
+  if (interactionLayer.inert) unblockInteraction();
+  clearSimulationDebt();
+  lastFrameTime = performance.now();
+  updateP7Status();
+  playP6Tone("start");
+}
+
+function closeP7StageMenu(): void {
+  if (!p7MenuOpen || p7ResultShown) return;
+  p7MenuOpen = false;
+  p7StageMenuOverlay.hidden = true;
+  paused = false;
+  resumeRequired = false;
+  if (interactionLayer.inert) unblockInteraction();
+  clearSimulationDebt();
+  lastFrameTime = performance.now();
+}
+
+function populateP7Result(): void {
+  if (!p7Result) return;
+  const completed = p7Result.completed;
+  const stage = getP7Stage(p7Result.stageId);
+  p7ResultEyebrow.textContent = completed ? `P7 ${stage.title} 完了` : `P7 ${stage.title} 失敗`;
+  p7ResultTitle.textContent = completed ? "面をクリアしました" : "今回は収容できませんでした";
+  p7ResultScore.textContent = completed ? `${p7Result.totalScore.toLocaleString("ja-JP")}点` : "未クリア";
+  p7ResultGrade.textContent = completed ? `評価 ${p7Result.grade}` : "評価 —";
+  p7ResultTitleText.textContent = completed
+    ? p7Result.titles.join("・")
+    : "次の試行で変える内容を一つ選びます";
+  p7ScoreSafety.textContent = completed ? p7Result.breakdown.safety.toLocaleString("ja-JP") : "—";
+  p7ScoreCoordination.textContent = completed ? p7Result.breakdown.coordination.toLocaleString("ja-JP") : "—";
+  p7ScoreJudgement.textContent = completed ? p7Result.breakdown.judgement.toLocaleString("ja-JP") : "—";
+  p7ScoreTime.textContent = completed ? p7Result.breakdown.time.toLocaleString("ja-JP") : "—";
+  p7ResultAdvice.textContent = `次回の助言： ${p7Result.advice}`;
+  const record = getP7StageRecord(p7Progress, p7StageId, p7ModeName());
+  p7ResultRecord.textContent = record
+    ? `${p7SettingsLabel()}のこの面の最高記録：${record.bestScore.toLocaleString("ja-JP")}点 / ${record.bestGrade}`
+    : "この面の記録はまだありません";
+}
+
+function showP7Result(): void {
+  if (p7ResultShown) return;
+  p7ResultShown = true;
+  paused = true;
+  resumeRequired = false;
+  input.clearAllInput("manual-clear");
+  p7Result = calculateP7Result(p7StageId, p7Metrics, p5Simulation);
+  p7Progress = updateP7Progress(p7Progress, p7Result);
+  writeP7Progress(p7Progress);
+  populateP7Result();
+  updateP7Status();
+  p7ResultOverlay.hidden = false;
+  blockInteraction(p7RetryButton);
+  playP6Tone(p7Result.completed ? "success" : "failure");
+  pulseP6Haptics(p7Result.completed ? [0, 80] : [0, 50, 50, 50]);
+}
+
+function retryP7Stage(): void {
+  if (!p7ResultShown) return;
+  p7ResultOverlay.hidden = true;
+  resetP5Prototype();
   paused = false;
   resumeRequired = false;
   if (interactionLayer.inert) unblockInteraction();
@@ -1451,7 +1754,7 @@ function syncP6SettingsControls(): void {
 }
 
 function openP6Settings(returnToResult = p6ResultShown): void {
-  if (!p6Mode || portrait) return;
+  if ((!p6Mode && !p7Mode) || portrait) return;
   p6SettingsReturnToResult = returnToResult;
   input.clearAllInput("manual-clear");
   paused = true;
@@ -1462,9 +1765,9 @@ function openP6Settings(returnToResult = p6ResultShown): void {
 
 function closeP6Settings(): void {
   p6SettingsOverlay.hidden = true;
-  if (p6SettingsReturnToResult || p6ResultShown) {
+  if (p6SettingsReturnToResult || p6ResultShown || p7ResultShown) {
     paused = true;
-    blockInteraction(p6RetryButton);
+    blockInteraction(p7ResultShown ? p7RetryButton : p6RetryButton);
     return;
   }
   paused = false;
@@ -1491,6 +1794,10 @@ function startP6Prototype(): void {
 }
 
 function showP5Result(): void {
+  if (p7Mode) {
+    showP7Result();
+    return;
+  }
   if (p6Mode) {
     showP6Result();
     return;
@@ -1521,6 +1828,10 @@ function showP5Result(): void {
 }
 
 function retryP5Prototype(): void {
+  if (p7Mode) {
+    retryP7Stage();
+    return;
+  }
   if (p6Mode) {
     retryP6Prototype();
     return;
@@ -1591,7 +1902,7 @@ function stepP5DecisionAtPlayer(
   isRunning: boolean,
   deltaSeconds: number,
 ): void {
-  const p6DecisionSeconds = p6Mode
+  const assistedDecisionSeconds = (p6Mode || p7Mode)
     && p6Settings.assistedMode
     && p5Simulation.animals.some((animal) => animal.type === "predator" && animal.phase === "aim")
     ? deltaSeconds * 0.7
@@ -1606,13 +1917,15 @@ function stepP5DecisionAtPlayer(
       guidanceSignal: p5PendingGuidanceSignal,
       threatSignal: p5PendingThreatSignal,
     },
-    p6DecisionSeconds,
+    assistedDecisionSeconds,
   );
-  if (p6Mode) observeP6Run(p6Metrics, p5Simulation, p6DecisionSeconds);
+  if (p6Mode) observeP6Run(p6Metrics, p5Simulation, assistedDecisionSeconds);
+  if (p7Mode) observeP6Run(p7Metrics, p5Simulation, assistedDecisionSeconds);
   p5PendingGuidanceSignal = false;
   p5PendingThreatSignal = false;
   p5DecisionUpdates += 1;
-  if (p6Mode) updateP6Status();
+  if (p7Mode) updateP7Status();
+  else if (p6Mode) updateP6Status();
   else updateP5Status();
   if (decision.status !== "active") showP5Result();
 }
@@ -1943,6 +2256,41 @@ function runP5CompletionReplay(): void {
   clearSimulationDebt();
 }
 
+function runP7CompletionReplay(): void {
+  if (!p7Mode) return;
+  p7ResultOverlay.hidden = true;
+  if (interactionLayer.inert) unblockInteraction();
+  resetP5Prototype();
+  paused = false;
+  resumeRequired = false;
+  for (const animal of p5Simulation.animals) {
+    const pen = p5Simulation.pens[animal.type];
+    animal.x = pen.centerX;
+    animal.z = pen.entranceZ - 0.3;
+    animal.previousX = animal.x;
+    animal.previousZ = animal.z;
+    animal.phase = animal.type === "predator" ? "disabled" : "enteringPen";
+    animal.lifeState = animal.type === "predator" ? "captured" : "active";
+    animal.insidePen = animal.type === "predator";
+  }
+  for (const route of p5Simulation.scenario.requiredRoutes) {
+    p5Simulation.discoveredRoutes[route] = true;
+  }
+  for (const eventType of p5Simulation.scenario.requiredEvents) {
+    p5Simulation.events.push({
+      id: p5Simulation.events.length + 1,
+      type: eventType,
+      atSeconds: 1,
+      subjectId: "p7-e2e",
+      reason: "deterministic-completion-fixture",
+    });
+  }
+  for (let step = 0; step < 40 && p5Simulation.status === "active"; step += 1) {
+    stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
+  }
+  clearSimulationDebt();
+}
+
 function resize(): void {
   const width = Math.max(1, root.clientWidth);
   const height = Math.max(1, root.clientHeight);
@@ -2164,6 +2512,10 @@ function updateP5Visuals(interpolationAlpha: number): void {
   const cowards = p5Simulation.animals.filter((animal) => animal.type === "coward");
   const followers = p5Simulation.animals.filter((animal) => animal.type === "follower");
   const predator = p5Simulation.animals.find((animal) => animal.type === "predator");
+  for (const type of ["coward", "follower", "predator"] as const) {
+    p5PenVisuals[type].visible = p5WorldMode
+      && p5Simulation.animals.some((animal) => animal.type === type);
+  }
   for (let index = 0; index < cowards.length; index += 1) {
     const visual = cowardVisuals[index];
     const animal = cowards[index];
@@ -2185,6 +2537,10 @@ function updateP5Visuals(interpolationAlpha: number): void {
       visual.escapeArrow.rotation.y = Math.atan2(animal.lastMoveX, animal.lastMoveZ);
     }
   }
+  for (let index = cowards.length; index < cowardVisuals.length; index += 1) {
+    const visual = cowardVisuals[index];
+    if (visual) visual.group.visible = false;
+  }
   for (let index = 0; index < followers.length; index += 1) {
     const visual = p5FollowerVisuals[index];
     const animal = followers[index];
@@ -2201,6 +2557,10 @@ function updateP5Visuals(interpolationAlpha: number): void {
     if (Math.hypot(animal.lastMoveX, animal.lastMoveZ) > 0.01) {
       visual.group.rotation.y = Math.atan2(-animal.lastMoveX, -animal.lastMoveZ);
     }
+  }
+  for (let index = followers.length; index < p5FollowerVisuals.length; index += 1) {
+    const visual = p5FollowerVisuals[index];
+    if (visual) visual.group.visible = false;
   }
   if (predator) {
     p5PredatorVisual.group.visible = p5WorldMode;
@@ -2220,6 +2580,8 @@ function updateP5Visuals(interpolationAlpha: number): void {
       p5PredatorVisual.group.rotation.y = Math.atan2(-predator.lastMoveX, -predator.lastMoveZ);
       p5PredatorVisual.intentArrow.rotation.y = Math.atan2(predator.lastMoveX, predator.lastMoveZ);
     }
+  } else {
+    p5PredatorVisual.group.visible = false;
   }
   const pulse = 1 + Math.sin(p5Simulation.elapsedSeconds * 14) * 0.08;
   for (const animal of [...cowards, ...followers, ...(predator ? [predator] : [])]) {
@@ -2536,6 +2898,23 @@ function getP6PublicState(): P6PublicState {
   };
 }
 
+function getP7PublicState(): P7PublicState {
+  return {
+    stageId: p7StageId,
+    status: p5Simulation.status,
+    failureReason: p5Simulation.failureReason,
+    menuVisible: !p7StageMenuOverlay.hidden,
+    resultVisible: !p7ResultOverlay.hidden,
+    progress: {
+      ...p7Progress,
+      completedStageIds: [...p7Progress.completedStageIds],
+      unlockedStageIds: [...p7Progress.unlockedStageIds],
+      records: { ...p7Progress.records },
+    },
+    result: p7Result,
+  };
+}
+
 function getP5PublicState(): P5PublicState {
   const counts = getP5CapturedCounts();
   return {
@@ -2654,6 +3033,31 @@ const p6Api: P6PublicApi = {
 };
 window.__OITATE_P6__ = p6Api;
 
+const p7Api: P7PublicApi = {
+  getState: getP7PublicState,
+  retry: retryP7Stage,
+  openMenu: () => showP7StageMenu(false),
+  ...(p7E2EEnabled
+    ? {
+        e2e: {
+          openStage: (stageId: P7StageId) => {
+            if (!p7Progress.unlockedStageIds.includes(stageId)) {
+              p7Progress = {
+                ...p7Progress,
+                unlockedStageIds: [...p7Progress.unlockedStageIds, stageId].sort(
+                  (first, second) => first - second,
+                ),
+              };
+            }
+            startP7Stage(stageId);
+          },
+          runCompletionReplay: runP7CompletionReplay,
+        },
+      }
+    : {}),
+};
+window.__OITATE_P7__ = p7Api;
+
 root.dataset.ready = "true";
 // Keep the P1 probe attribute for regression checks while exposing the P3
 // world separately for the new slice.
@@ -2668,4 +3072,6 @@ root.dataset.p4WorldEntities = "player,predator,victim,predator-pen";
 root.dataset.p5WorldEntities = "player,coward-1..6,follower-1..4,predator,coward-pen,follower-pen,predator-pen,water,bridge";
 root.dataset.p6WorldEntities = "player,coward-1..6,follower-1..4,predator,coward-pen,follower-pen,predator-pen,water,bridge";
 root.dataset.p6Mode = String(p6Mode);
+root.dataset.p7Mode = String(p7Mode);
+root.dataset.p7Stage = String(p7StageId);
 requestAnimationFrame(frame);

@@ -100,10 +100,27 @@ export interface P5Event {
   reason: string;
 }
 
+export interface P5SimulationScenario {
+  cowardCount: number;
+  followerCount: number;
+  predatorCount: number;
+  requiredRoutes: P5Route[];
+  requiredEvents: P5EventType[];
+}
+
+export const DEFAULT_P5_SCENARIO: P5SimulationScenario = {
+  cowardCount: 6,
+  followerCount: 4,
+  predatorCount: 1,
+  requiredRoutes: [],
+  requiredEvents: [],
+};
+
 export interface P5SimulationState {
   elapsedSeconds: number;
   status: P5RunStatus;
   failureReason: P5FailureReason;
+  scenario: P5SimulationScenario;
   animals: P5AnimalState[];
   pens: Record<P5AnimalType, P5Pen>;
   penReservations: Record<P5AnimalType, string | null>;
@@ -268,28 +285,40 @@ function createAnimal(
   };
 }
 
-export function createP5Simulation(): P5SimulationState {
+export function createP5Simulation(
+  scenario: P5SimulationScenario = DEFAULT_P5_SCENARIO,
+): P5SimulationState {
   const animals: P5AnimalState[] = [];
   const cowardPositions: Array<[number, number]> = [
     [-5.8, 5.7], [-4.2, 6.4], [-2.6, 5.5], [-1.0, 6.4], [0.6, 5.6], [2.2, 6.3],
   ];
-  for (let index = 0; index < P5_TUNING.cowardCount; index += 1) {
+  const cowardCount = Math.max(0, Math.floor(scenario.cowardCount));
+  const followerCount = Math.max(0, Math.floor(scenario.followerCount));
+  const predatorCount = Math.max(0, Math.floor(scenario.predatorCount));
+  for (let index = 0; index < cowardCount; index += 1) {
     const [x, z] = cowardPositions[index] ?? [0, 6];
     animals.push(createAnimal(`coward-${index + 1}`, "coward", x, z));
   }
   const followerPositions: Array<[number, number]> = [[5.2, 5.6], [6.8, 6.3], [8.4, 5.5], [10, 6.2]];
-  for (let index = 0; index < P5_TUNING.followerCount; index += 1) {
+  for (let index = 0; index < followerCount; index += 1) {
     const [x, z] = followerPositions[index] ?? [7, 6];
     animals.push(createAnimal(`follower-${index + 1}`, "follower", x, z));
   }
   // Keep the predator outside the fast-route marker at spawn; route
   // discovery must represent an animal crossing a route, not initial setup.
-  animals.push(createAnimal("predator-1", "predator", 3.6, 0.8));
+  if (predatorCount > 0) animals.push(createAnimal("predator-1", "predator", 3.6, 0.8));
 
   return {
     elapsedSeconds: 0,
     status: "active",
     failureReason: "none",
+    scenario: {
+      cowardCount,
+      followerCount,
+      predatorCount,
+      requiredRoutes: [...scenario.requiredRoutes],
+      requiredEvents: [...scenario.requiredEvents],
+    },
     animals,
     pens: {
       coward: { ...P5_TUNING.pens.coward },
@@ -333,10 +362,8 @@ function getAnimal(state: P5SimulationState, id: string): P5AnimalState | undefi
   return state.animals.find((animal) => animal.id === id);
 }
 
-function getPredator(state: P5SimulationState): P5AnimalState {
-  const predator = state.animals.find((animal) => animal.type === "predator");
-  if (!predator) throw new Error("P5の危険種が見つかりません。");
-  return predator;
+function getPredator(state: P5SimulationState): P5AnimalState | undefined {
+  return state.animals.find((animal) => animal.type === "predator");
 }
 
 function getVictim(state: P5SimulationState): P5AnimalState | undefined {
@@ -595,6 +622,7 @@ function applyThreatSignal(
 ): { accepted: boolean; rescued: boolean } {
   if (!player.threatSignal || state.status !== "active") return { accepted: false, rescued: false };
   const predator = getPredator(state);
+  if (!predator) return { accepted: false, rescued: false };
   if (predator.phase === "lunge"
     || predator.lifeState === "disabled"
     || predator.lifeState === "captured") {
@@ -778,6 +806,7 @@ function updatePredator(
   deltaSeconds: number,
 ): { rescued: boolean } {
   const predator = getPredator(state);
+  if (!predator) return { rescued: false };
   const victim = getVictim(state);
   if (predator.lifeState === "disabled" || predator.lifeState === "captured") {
     return { rescued: false };
@@ -927,8 +956,17 @@ function updateCompletion(state: P5SimulationState): void {
   const preyCaptured = state.animals
     .filter((animal) => animal.type !== "predator")
     .every((animal) => animal.lifeState === "captured");
-  const predatorCaptured = getPredator(state).lifeState === "captured";
-  if (preyCaptured && predatorCaptured) state.status = "completed";
+  const predator = getPredator(state);
+  const predatorCaptured = !predator || predator.lifeState === "captured";
+  const routesSatisfied = state.scenario.requiredRoutes.every(
+    (route) => state.discoveredRoutes[route],
+  );
+  const eventsSatisfied = state.scenario.requiredEvents.every(
+    (eventType) => state.events.some((event) => event.type === eventType),
+  );
+  if (preyCaptured && predatorCaptured && routesSatisfied && eventsSatisfied) {
+    state.status = "completed";
+  }
 }
 
 export function stepP5Simulation(
