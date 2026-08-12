@@ -54,6 +54,37 @@ test("uses the Vite manifest and checks expanded static asset references", () =>
   assert.ok(report.totalGzipBytes > 0);
 });
 
+test("fails closed on malformed Vite manifest entries and fields", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-manifest-"));
+  const dist = join(root, "dist");
+  mkdirSync(join(dist, ".vite"), { recursive: true });
+  mkdirSync(join(dist, "assets"), { recursive: true });
+  writeFileSync(join(dist, "index.html"), "<script type=\"module\" src=\"/assets/main.js\"></script>");
+  writeFileSync(join(dist, "candidate.html"), "<main>candidate</main>");
+  writeFileSync(join(dist, "assets", "main.js"), "console.log('ok');");
+
+  const base = { src: "index.html", file: "assets/main.js", isEntry: true };
+  const cases = [
+    ["missing file", { src: "index.html", isEntry: true }, "must define file"],
+    ["css type", { ...base, css: "assets/main.css" }, "must define css"],
+    ["assets item type", { ...base, assets: ["assets/asset.bin", 42] }, "must define assets"],
+    ["imports type", { ...base, imports: "chunk.js" }, "must define imports"],
+    ["dynamic imports type", { ...base, dynamicImports: ["chunk.js", null] }, "must define dynamicImports"],
+    ["missing import target", { ...base, imports: ["missing-entry"] }, "import target missing"],
+    ["missing output", { ...base, file: "assets/missing.js" }, "missing Vite manifest asset"],
+  ];
+
+  for (const [label, entry, expected] of cases) {
+    writeManifest(dist, { "index.html": entry });
+    const report = collectBuildAudit({ distDirectory: dist });
+    assert.equal(
+      report.failures.some((failure) => failure.includes(expected)),
+      true,
+      label,
+    );
+  }
+});
+
 test("fails on missing srcset, CSS import, poster, and SVG references", () => {
   const root = mkdtempSync(join(tmpdir(), "oitate-p8-audit-"));
   const dist = join(root, "dist");
@@ -61,7 +92,7 @@ test("fails on missing srcset, CSS import, poster, and SVG references", () => {
   writeFileSync(join(dist, "index.html"), "<script src=\"/assets/missing.js\"></script>");
   writeFileSync(
     join(dist, "candidate.html"),
-    "<link rel=\"stylesheet\" href=\"./assets/candidate.css\"><img src=\"./media/bad.svg\"><video poster=\"./media/missing-poster.png\"></video><img srcset=\"./media/missing-small.png 1x, ./media/missing-large.png 2x\">",
+    "<link rel=\"stylesheet\" href=\"./assets/candidate.css\"><img src=\"./media/bad.svg\"><video poster=\"./media/missing-poster.png\"></video><img srcset=\"data:image/svg+xml,%3Csvg%3E 1x, ./media/missing-after-data.png 2x\">",
   );
   writeFileSync(join(dist, ".vite", "manifest.json"), JSON.stringify({
     "index.html": { src: "index.html", file: "assets/missing.js", isEntry: true },
@@ -73,6 +104,7 @@ test("fails on missing srcset, CSS import, poster, and SVG references", () => {
   const report = collectBuildAudit({ distDirectory: dist });
   assert.equal(report.failures.some((failure) => failure.includes("missing local asset")), true);
   assert.equal(report.failures.some((failure) => failure.includes("missing Vite manifest asset")), true);
+  assert.equal(report.failures.some((failure) => failure.includes("missing-after-data.png")), true);
 });
 
 test("classifies direct and transitive packages with complete manifests", () => {
@@ -85,6 +117,7 @@ test("classifies direct and transitive packages with complete manifests", () => 
     name: "runtime",
     version: "1.0.0",
     license: "MIT",
+    dependencies: { transitive: "2.0.0" },
     optionalDependencies: { "runtime-linux-x64": "1.0.0" },
   }));
   writeFileSync(join(transitivePath, "package.json"), JSON.stringify({ name: "transitive", version: "2.0.0", licenses: [{ type: "Apache-2.0" }] }));
@@ -115,6 +148,45 @@ test("classifies direct and transitive packages with complete manifests", () => 
     ],
   );
   assert.equal(normalizeLicense({ type: "MIT" }), "MIT");
+});
+
+test("fails when a required transitive dependency is absent from npm ls", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
+  const runtimePath = join(root, "node_modules", "runtime");
+  const transitivePath = join(root, "node_modules", "transitive");
+  mkdirSync(runtimePath, { recursive: true });
+  mkdirSync(transitivePath, { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({ dependencies: { runtime: "1.0.0" } }));
+  writeFileSync(join(runtimePath, "package.json"), JSON.stringify({
+    name: "runtime",
+    version: "1.0.0",
+    license: "MIT",
+    dependencies: { transitive: "2.0.0" },
+  }));
+  writeFileSync(join(transitivePath, "package.json"), JSON.stringify({
+    name: "transitive",
+    version: "2.0.0",
+    license: "Apache-2.0",
+  }));
+
+  const report = collectDependencyLicenses({
+    rootDirectory: root,
+    dependencyTree: {
+      path: root,
+      dependencies: {
+        runtime: {
+          name: "runtime",
+          version: "1.0.0",
+          path: runtimePath,
+          dependencies: {},
+        },
+      },
+    },
+  });
+  assert.equal(
+    report.failures.some((failure) => failure.includes("required dependency is missing from npm ls: runtime@1.0.0 -> transitive")),
+    true,
+  );
 });
 
 test("fails closed on npm ls errors, problems, missing dependencies, and unknown licenses", () => {
@@ -178,6 +250,37 @@ test("ignores uninstalled optional platform packages", () => {
   });
   assert.deepEqual(report.failures, []);
   assert.deepEqual(report.packages.map((item) => item.name), ["runtime"]);
+});
+
+test("detects unknown tokens inside compound license expressions", () => {
+  const cases = [
+    ["MIT AND unknown", true],
+    ["(MIT OR UNKNOWN)", true],
+    ["Apache-2.0 WITH unknown", true],
+    ["MIT AND Apache-2.0", false],
+  ];
+
+  for (const [license, expectedUnknown] of cases) {
+    const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
+    const runtimePath = join(root, "node_modules", "runtime");
+    mkdirSync(runtimePath, { recursive: true });
+    writeFileSync(join(root, "package.json"), JSON.stringify({ dependencies: { runtime: "1.0.0" } }));
+    writeFileSync(join(runtimePath, "package.json"), JSON.stringify({
+      name: "runtime",
+      version: "1.0.0",
+      license,
+    }));
+    const report = collectDependencyLicenses({
+      rootDirectory: root,
+      dependencyTree: {
+        path: root,
+        dependencies: {
+          runtime: { name: "runtime", version: "1.0.0", path: runtimePath },
+        },
+      },
+    });
+    assert.equal(report.unknownLicenses.length > 0, expectedUnknown, license);
+  }
 });
 
 test("fails on manifest mismatches and unknown license variants", () => {
