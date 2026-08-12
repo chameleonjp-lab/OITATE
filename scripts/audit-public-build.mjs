@@ -79,10 +79,13 @@ function extractHtmlAssetReferences(content) {
   const references = [];
   const pattern = /\b(src|href|poster|srcset|imagesrcset|xlink:href)\s*=\s*(["'])(.*?)\2/gi;
   for (const match of content.matchAll(pattern)) {
-    if (match[1].toLowerCase().endsWith("srcset")) {
-      references.push(...extractSrcsetReferences(match[3]));
+    const attribute = match[1].toLowerCase();
+    const reference = match[3];
+    if (attribute === "href" && withoutUrlSuffix(reference) === ".") continue;
+    if (attribute.endsWith("srcset")) {
+      references.push(...extractSrcsetReferences(reference));
     } else {
-      references.push(match[3]);
+      references.push(reference);
     }
   }
   return references;
@@ -471,11 +474,14 @@ function collectDependencyNodes(
   if (visited.has(key)) return;
   visited.add(key);
 
+  if (!nodePath) {
+    if (node.optional === true || node.peerOptional === true) return;
+    failures.push("unresolved installed package path: " + (name ?? dependencyName ?? "unknown"));
+    return;
+  }
+
   const record = { ...node, name, version, path: nodePath };
   if (nodePath !== root) nodes.push(record);
-  if (!nodePath) {
-    failures.push("unresolved installed package path: " + (name ?? dependencyName ?? "unknown"));
-  }
 
   if (node.dependencies !== undefined && (
     !node.dependencies || typeof node.dependencies !== "object" || Array.isArray(node.dependencies)
@@ -527,11 +533,13 @@ export function collectDependencyLicenses({
   for (const [name, scope] of directDefinitions) {
     const declaredNode = tree?.dependencies?.[name];
     if (!declaredNode) {
+      if (Object.prototype.hasOwnProperty.call(rootManifest.optionalDependencies ?? {}, name)) continue;
       failures.push("declared dependency is missing from npm ls: " + name);
       continue;
     }
     const installedPath = resolveInstalledPackagePath(root, root, name);
     if (!installedPath) {
+      if (declaredNode.optional === true || declaredNode.peerOptional === true) continue;
       failures.push("declared dependency manifest is unresolved: " + name);
       continue;
     }
@@ -689,8 +697,10 @@ export function createReport({ rootDirectory = process.cwd(), outputDirectory } 
       return "unknown";
     }
   })();
-  const testedMergeSha = process.env.GITHUB_SHA ?? null;
-  const sourceHeadSha = process.env.GITHUB_HEAD_SHA ?? testedMergeSha;
+  const testedMergeSha = process.env.P8_TESTED_MERGE_SHA ?? process.env.GITHUB_SHA ?? null;
+  const sourceHeadSha = process.env.P8_SOURCE_HEAD_SHA
+    ?? process.env.GITHUB_HEAD_SHA
+    ?? testedMergeSha;
   const failures = [...build.failures, ...dependencies.failures];
   if (dependencies.unknownLicenses.length > 0) {
     failures.push("unknown license metadata: " + dependencies.unknownLicenses.join(", "));
