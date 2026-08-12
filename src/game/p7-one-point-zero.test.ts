@@ -181,6 +181,9 @@ describe("P7 1.0 content progression", () => {
       "誘導音の後に威嚇音を使い、保護対象6体を収容し、危険種1体を隔離する",
     );
     const state = createP5Simulation(stage.simulation);
+    expect(state.animals).toHaveLength(7);
+    expect(state.animals.filter((animal) => animal.type !== "predator")).toHaveLength(6);
+    expect(state.animals.filter((animal) => animal.type === "predator")).toHaveLength(1);
     for (const animal of state.animals.filter((candidate) => candidate.type !== "predator")) {
       animal.lifeState = "captured";
       animal.phase = "captured";
