@@ -84,6 +84,8 @@ export type P5EventType =
   | "predatorTargeted"
   | "predatorAimStarted"
   | "predatorLungeStarted"
+  | "routeSwitched"
+  | "signalSideEffect"
   | "victimRescuePending"
   | "rescueSucceeded"
   | "rescueFailed"
@@ -106,6 +108,7 @@ export interface P5SimulationScenario {
   predatorCount: number;
   requiredRoutes: P5Route[];
   requiredEvents: P5EventType[];
+  signalSideEffects: boolean;
 }
 
 export const DEFAULT_P5_SCENARIO: P5SimulationScenario = {
@@ -114,6 +117,7 @@ export const DEFAULT_P5_SCENARIO: P5SimulationScenario = {
   predatorCount: 1,
   requiredRoutes: [],
   requiredEvents: [],
+  signalSideEffects: false,
 };
 
 export interface P5SimulationState {
@@ -132,6 +136,7 @@ export interface P5SimulationState {
   threatCooldownSeconds: number;
   threatResistanceSeconds: number;
   rescueOverrideUsed: boolean;
+  lastGuidanceRoute: P5Route | null;
 }
 
 export interface P5PlayerInput {
@@ -180,6 +185,7 @@ export const P5_TUNING = {
   threatDurationSeconds: 4,
   threatCooldownSeconds: 3,
   threatResistanceSeconds: 1.75,
+  signalSideEffectDistance: 6,
   rescueDeadlineSeconds: 3,
   rescueProtectionSeconds: 1,
   rescueDistance: 2.25,
@@ -318,6 +324,7 @@ export function createP5Simulation(
       predatorCount,
       requiredRoutes: [...scenario.requiredRoutes],
       requiredEvents: [...scenario.requiredEvents],
+      signalSideEffects: scenario.signalSideEffects === true,
     },
     animals,
     pens: {
@@ -339,6 +346,7 @@ export function createP5Simulation(
     threatCooldownSeconds: 0,
     threatResistanceSeconds: 0,
     rescueOverrideUsed: false,
+    lastGuidanceRoute: null,
   };
 }
 
@@ -560,7 +568,34 @@ function applyGuidanceSignal(
     accepted = true;
     recordEvent(state, "animalStartedFollowing", animal.id, route);
   }
+  if (accepted) {
+    if (state.lastGuidanceRoute === "safe" && route === "fast") {
+      recordEvent(state, "routeSwitched", "follower-group", "safe-to-fast");
+    }
+    state.lastGuidanceRoute = route;
+  }
   return accepted;
+}
+
+function applySignalSideEffects(
+  state: P5SimulationState,
+  player: P5PlayerInput,
+): void {
+  if (!state.scenario.signalSideEffects) return;
+  for (const animal of state.animals) {
+    if (animal.type === "predator" || animal.lifeState !== "active") continue;
+    if (distance(animal.x, animal.z, player.x, player.z)
+      > P5_TUNING.signalSideEffectDistance) continue;
+    if (animal.type === "coward") {
+      animal.tension = clamp(animal.tension + 28, 0, 100);
+      animal.phase = "fleeing";
+      recordEvent(state, "signalSideEffect", animal.id, "threat-signal-scattered-coward");
+    } else {
+      animal.followingSeconds = 0;
+      animal.phase = "idle";
+      recordEvent(state, "signalSideEffect", animal.id, "threat-signal-stopped-follower");
+    }
+  }
 }
 
 function setPredatorSearch(predator: P5AnimalState): void {
@@ -641,6 +676,7 @@ function applyThreatSignal(
   predator.targetId = null;
   predator.threatSeconds = P5_TUNING.threatDurationSeconds;
   recordEvent(state, "predatorThreatAccepted", predator.id, rescueOverride ? "rescue-override" : "normal-threat");
+  applySignalSideEffects(state, player);
 
   const victim = getVictim(state);
   if (victim?.lifeState === "rescuePending" && !state.rescueOverrideUsed) {

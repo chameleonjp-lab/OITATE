@@ -10,6 +10,7 @@ import {
   updateP7Progress,
   writeP7Progress,
   type P7Storage,
+  type P7Result,
   type P7StageId,
 } from "./p7-one-point-zero";
 import { createP6RunMetrics } from "./p6-vertical-slice-completion";
@@ -58,7 +59,10 @@ describe("P7 1.0 content progression", () => {
     expect(getP7Stage(4).simulation.requiredEvents).toEqual([
       "animalStartedFollowing",
       "predatorThreatAccepted",
+      "signalSideEffect",
     ]);
+    expect(getP7Stage(4).simulation.signalSideEffects).toBe(true);
+    expect(getP7Stage(5).simulation.requiredEvents).toEqual(["routeSwitched"]);
   });
 
   it("does not complete a stage until its required concept was used", () => {
@@ -106,6 +110,30 @@ describe("P7 1.0 content progression", () => {
     expect(restored.completedStageIds).toEqual([1]);
     expect(restored.unlockedStageIds).toEqual([0, 1, 2]);
     expect(restored.records[1]?.standard?.mode).toBe("standard");
+  });
+
+  it("counts failed attempts and rejects forged later-stage unlocks", () => {
+    const completed = makeCompletedResult(1);
+    const failed: P7Result = { ...completed, completed: false, grade: "未クリア" };
+    let progress = updateP7Progress(createP7Progress(), failed);
+    expect(progress.attempts[1]?.standard).toBe(1);
+    expect(progress.records[1]).toBeUndefined();
+    progress = updateP7Progress(progress, completed);
+    expect(progress.attempts[1]?.standard).toBe(2);
+    expect(progress.records[1]?.standard?.attempts).toBe(2);
+
+    const storage = new MemoryStorage();
+    storage.setItem("oitate:p7:progress:v1", JSON.stringify({
+      version: 1,
+      completedStageIds: [6],
+      unlockedStageIds: [0, 1, 6],
+      records: {},
+      fourthAnimalGate: "eligible",
+    }));
+    const sanitized = readP7Progress(storage);
+    expect(sanitized.completedStageIds).toEqual([]);
+    expect(sanitized.unlockedStageIds).toEqual([0, 1]);
+    expect(sanitized.fourthAnimalGate).toBe("locked");
   });
 
   it("keeps practice, standard, and assisted records separate", () => {

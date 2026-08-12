@@ -45,6 +45,25 @@ test("records a completed stage and unlocks the next stage", async ({ page }) =>
   await expect(page.locator("#p7-stage-list [data-p7-stage='2']")).toBeEnabled();
 });
 
+test("progresses through all six content stages and keeps the fourth animal gated", async ({ page }) => {
+  await page.locator("#p7-stage-list [data-p7-stage='1']").click();
+  for (let stageId = 1; stageId <= 6; stageId += 1) {
+    await page.evaluate(() => window.__OITATE_P7__.e2e?.runCompletionReplay());
+    await expect(page.locator("#p7-result-overlay")).toBeVisible();
+    const state = await getP7State(page);
+    expect(state.status).toBe("completed");
+    expect(state.progress.completedStageIds).toContain(stageId);
+    if (stageId < 6) {
+      await page.locator("[data-action='p7-select-stage']").click();
+      await expect(page.locator("#p7-stage-menu-overlay")).toBeVisible();
+      await expect(page.locator(`#p7-stage-list [data-p7-stage='${stageId + 1}']`)).toBeEnabled();
+      await page.locator(`#p7-stage-list [data-p7-stage='${stageId + 1}']`).click();
+    }
+  }
+  await page.locator("[data-action='p7-select-stage']").click();
+  await expect(page.locator("#p7-fourth-gate")).toContainText("検証候補");
+});
+
 test("does not expose the P7 E2E hook on a production query", async ({ page }) => {
   await page.goto("/?p7=1");
   await expect(page.locator("#app")).toHaveAttribute("data-ready", "true");

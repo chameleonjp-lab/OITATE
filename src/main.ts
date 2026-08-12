@@ -1088,6 +1088,7 @@ let p7Metrics = createP6RunMetrics(p6Settings.assistedMode);
 let p7Result: P7Result | null = null;
 let p7ResultShown = false;
 let p7MenuOpen = false;
+let p7StageStarted = false;
 
 if (p5WorldMode) {
   simulationPosition.set(0, 0, 7.5);
@@ -1285,7 +1286,8 @@ const input = new InputController(root, {
       clearSimulationDebt();
       blockInteraction(orientationOverlay);
     } else {
-      showResume("横画面へ戻りました");
+      if (p7Mode && !p7StageStarted) showP7StageMenu(true);
+      else showResume("横画面へ戻りました");
     }
   },
   onLifecyclePauseRequested: requestAutoPause,
@@ -1599,6 +1601,7 @@ function showP7StageMenu(initial = false): void {
 function startP7Stage(stageId: P7StageId): void {
   if (!p7Mode || !isP7StageUnlocked(p7Progress, stageId)) return;
   p7StageId = stageId;
+  p7StageStarted = true;
   p7MenuOpen = false;
   p7StageMenuOverlay.hidden = true;
   p7MenuCloseButton.hidden = true;
@@ -2924,6 +2927,7 @@ function getP7PublicState(): P7PublicState {
       completedStageIds: [...p7Progress.completedStageIds],
       unlockedStageIds: [...p7Progress.unlockedStageIds],
       records: { ...p7Progress.records },
+      attempts: { ...p7Progress.attempts },
     },
     result: p7Result,
   };

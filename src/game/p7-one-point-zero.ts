@@ -42,6 +42,7 @@ export interface P7Progress {
   completedStageIds: P7StageId[];
   unlockedStageIds: P7StageId[];
   records: Partial<Record<P7StageId, Partial<Record<P7RecordMode, P7StageRecord>>>>;
+  attempts: Partial<Record<P7StageId, Partial<Record<P7RecordMode, number>>>>;
   fourthAnimalGate: P7FourthAnimalGate;
 }
 
@@ -59,6 +60,7 @@ function scenario(
   predatorCount: number,
   requiredRoutes: P5Route[] = [],
   requiredEvents: P5EventType[] = [],
+  signalSideEffects = false,
 ): P5SimulationScenario {
   return {
     cowardCount,
@@ -66,6 +68,7 @@ function scenario(
     predatorCount,
     requiredRoutes,
     requiredEvents,
+    signalSideEffects,
   };
 }
 
@@ -111,13 +114,14 @@ export const P7_STAGES: readonly P7StageDefinition[] = [
     title: "4　合図の副作用",
     center: "合図の相手を選ぶ",
     description: "誘導音と威嚇音は、別の動物にも状況を変えます。順番を考えます。",
-    objective: "誘導音と威嚇音を使い分け、6体を収容する",
+    objective: "誘導音と威嚇音を使い分け、副作用を受けながら7体を収容する",
     simulation: scenario(
       3,
       3,
       1,
       [],
-      ["animalStartedFollowing", "predatorThreatAccepted"],
+      ["animalStartedFollowing", "predatorThreatAccepted", "signalSideEffect"],
+      true,
     ),
     isPractice: false,
   },
@@ -127,7 +131,7 @@ export const P7_STAGES: readonly P7StageDefinition[] = [
     center: "狭い経路を順番に使う",
     description: "群れを一度に押し込まず、安全な経路と速い経路を使い分けます。",
     objective: "2つの経路を発見し、臆病種6体と追従種4体を収容する",
-    simulation: scenario(6, 4, 0, ["safe", "fast"]),
+    simulation: scenario(6, 4, 0, ["safe", "fast"], ["routeSwitched"]),
     isPractice: false,
   },
   {
@@ -174,6 +178,25 @@ function uniqueStageIds(value: unknown, fallback: P7StageId[]): P7StageId[] {
   return [...new Set(value.filter(isStageId))].sort((first, second) => first - second);
 }
 
+function normalizeCompletedStageIds(value: unknown): P7StageId[] {
+  const candidate = uniqueStageIds(value, []);
+  const completed: P7StageId[] = candidate.includes(0) ? [0] : [];
+  for (let stageId = 1; stageId <= 6; stageId += 1) {
+    if (!candidate.includes(stageId as P7StageId)) break;
+    completed.push(stageId as P7StageId);
+  }
+  return completed;
+}
+
+function unlockedStageIdsFromCompleted(completedStageIds: P7StageId[]): P7StageId[] {
+  const unlocked: P7StageId[] = [0, 1];
+  for (let stageId = 1; stageId < 6; stageId += 1) {
+    if (!completedStageIds.includes(stageId as P7StageId)) break;
+    unlocked.push((stageId + 1) as P7StageId);
+  }
+  return unlocked;
+}
+
 function isGrade(value: unknown): value is Exclude<P7Grade, "未クリア"> {
   return value === "S" || value === "A" || value === "B" || value === "C";
 }
@@ -209,6 +232,7 @@ export function createP7Progress(): P7Progress {
     completedStageIds: [],
     unlockedStageIds: [0, 1],
     records: {},
+    attempts: {},
     fourthAnimalGate: "locked",
   };
 }
@@ -221,17 +245,16 @@ export function readP7Progress(storage?: P7Storage): P7Progress {
     const parsed = asObject(JSON.parse(raw));
     if (!parsed || parsed.version !== 1) return createP7Progress();
     const progress = createP7Progress();
-    progress.completedStageIds = uniqueStageIds(parsed.completedStageIds, []);
-    progress.unlockedStageIds = uniqueStageIds(parsed.unlockedStageIds, [0, 1]);
-    if (!progress.unlockedStageIds.includes(0)) progress.unlockedStageIds.unshift(0);
-    if (!progress.unlockedStageIds.includes(1)) progress.unlockedStageIds.push(1);
+    progress.completedStageIds = normalizeCompletedStageIds(parsed.completedStageIds);
+    progress.unlockedStageIds = unlockedStageIdsFromCompleted(progress.completedStageIds);
+    const maximumReachableStageId = Math.max(...progress.unlockedStageIds);
     const records = asObject(parsed.records);
     if (records) {
       for (const [key, value] of Object.entries(records)) {
         const stageId = Number(key);
-        if (!isStageId(stageId)) continue;
+        if (!isStageId(stageId) || stageId > maximumReachableStageId) continue;
         const directRecord = parseRecord(value);
-        if (directRecord) {
+        if (directRecord?.stageId === stageId) {
           progress.records[stageId] = { [directRecord.mode]: directRecord };
           continue;
         }
@@ -240,12 +263,43 @@ export function readP7Progress(storage?: P7Storage): P7Progress {
         const parsedSet: Partial<Record<P7RecordMode, P7StageRecord>> = {};
         for (const mode of ["standard", "assisted", "practice"] as const) {
           const record = parseRecord(recordSet[mode], mode);
-          if (record) parsedSet[mode] = record;
+          if (record?.stageId === stageId) parsedSet[mode] = record;
         }
         if (Object.keys(parsedSet).length > 0) progress.records[stageId] = parsedSet;
       }
     }
-    progress.fourthAnimalGate = parsed.fourthAnimalGate === "eligible" ? "eligible" : "locked";
+    const attempts = asObject(parsed.attempts);
+    if (attempts) {
+      for (const [key, value] of Object.entries(attempts)) {
+        const stageId = Number(key);
+        if (!isStageId(stageId) || stageId > maximumReachableStageId) continue;
+        const attemptSet = asObject(value);
+        if (!attemptSet) continue;
+        const parsedSet: Partial<Record<P7RecordMode, number>> = {};
+        for (const mode of ["standard", "assisted", "practice"] as const) {
+          const count = attemptSet[mode];
+          if (typeof count === "number" && Number.isFinite(count) && count >= 0) {
+            parsedSet[mode] = Math.floor(count);
+          }
+        }
+        if (Object.keys(parsedSet).length > 0) progress.attempts[stageId] = parsedSet;
+      }
+    }
+    for (const [key, recordSet] of Object.entries(progress.records)) {
+      const stageId = Number(key) as P7StageId;
+      const attemptsForStage = progress.attempts[stageId] ?? {};
+      for (const mode of ["standard", "assisted", "practice"] as const) {
+        const record = recordSet?.[mode];
+        if (!record) continue;
+        const attempts = Math.max(attemptsForStage[mode] ?? 0, record.attempts);
+        progress.attempts[stageId] = { ...progress.attempts[stageId], [mode]: attempts };
+        progress.records[stageId] = {
+          ...progress.records[stageId],
+          [mode]: { ...record, attempts },
+        };
+      }
+    }
+    progress.fourthAnimalGate = isP7Complete(progress) ? "eligible" : "locked";
     return progress;
   } catch {
     return createP7Progress();
@@ -294,34 +348,53 @@ function isBetterRecord(result: P7Result, record: P7StageRecord | undefined): bo
 }
 
 export function updateP7Progress(progress: P7Progress, result: P7Result): P7Progress {
-  if (!result.completed) return progress;
-  const completedStageIds = progress.completedStageIds.includes(result.stageId)
-    ? [...progress.completedStageIds]
-    : [...progress.completedStageIds, result.stageId].sort((first, second) => first - second);
-  const unlockedStageIds = [...progress.unlockedStageIds];
-  const nextStage = result.stageId + 1;
-  if (nextStage <= 6 && !unlockedStageIds.includes(nextStage as P7StageId)) {
-    unlockedStageIds.push(nextStage as P7StageId);
-    unlockedStageIds.sort((first, second) => first - second);
-  }
   const mode: P7RecordMode = result.stageId === 0
     ? "practice"
     : result.assistedMode ? "assisted" : "standard";
   const previousRecords = progress.records[result.stageId] ?? {};
   const previous = previousRecords[mode];
+  const previousAttempts = progress.attempts[result.stageId]?.[mode] ?? previous?.attempts ?? 0;
+  const attempts = previousAttempts + 1;
+  const attemptProgress = {
+    ...progress,
+    attempts: {
+      ...progress.attempts,
+      [result.stageId]: {
+        ...progress.attempts[result.stageId],
+        [mode]: attempts,
+      },
+    },
+  };
+  if (!result.completed) {
+    return previous
+      ? {
+          ...attemptProgress,
+          records: {
+            ...progress.records,
+            [result.stageId]: {
+              ...previousRecords,
+              [mode]: { ...previous, attempts },
+            },
+          },
+        }
+      : attemptProgress;
+  }
+  const completedStageIds = normalizeCompletedStageIds([
+    ...progress.completedStageIds,
+    result.stageId,
+  ]);
+  const unlockedStageIds = unlockedStageIdsFromCompleted(completedStageIds);
   const better = isBetterRecord(result, previous);
   const record: P7StageRecord = {
     stageId: result.stageId,
     mode,
     bestScore: better ? result.totalScore : previous?.bestScore ?? result.totalScore,
     bestGrade: better ? result.grade as Exclude<P7Grade, "未クリア"> : previous?.bestGrade ?? "C",
-    bestTimeSeconds: better
-      ? result.elapsedSeconds
-      : previous?.bestTimeSeconds ?? result.elapsedSeconds,
-    attempts: (previous?.attempts ?? 0) + 1,
+    bestTimeSeconds: Math.min(previous?.bestTimeSeconds ?? result.elapsedSeconds, result.elapsedSeconds),
+    attempts,
   };
   return {
-    ...progress,
+    ...attemptProgress,
     completedStageIds,
     unlockedStageIds,
     records: {
