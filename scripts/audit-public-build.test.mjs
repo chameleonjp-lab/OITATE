@@ -85,6 +85,32 @@ test("fails closed on malformed Vite manifest entries and fields", () => {
   }
 });
 
+test("fails on missing files in unreferenced Vite manifest entries", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-manifest-"));
+  const dist = join(root, "dist");
+  mkdirSync(join(dist, ".vite"), { recursive: true });
+  mkdirSync(join(dist, "assets"), { recursive: true });
+  writeFileSync(join(dist, "index.html"), "<script type=\"module\" src=\"/assets/main.js\"></script>");
+  writeFileSync(join(dist, "candidate.html"), "<main>candidate</main>");
+  writeFileSync(join(dist, "assets", "main.js"), "console.log('ok');");
+  writeManifest(dist, {
+    "index.html": { src: "index.html", file: "assets/main.js", isEntry: true },
+    "orphan.js": {
+      src: "orphan.js",
+      file: "assets/orphan.js",
+      css: ["assets/orphan.css"],
+      assets: ["media/orphan.png"],
+    },
+  });
+
+  const report = collectBuildAudit({ distDirectory: dist });
+  assert.equal(report.manifest.valid, false);
+  assert.equal(
+    report.failures.filter((failure) => failure.includes("missing Vite manifest asset")).length >= 3,
+    true,
+  );
+});
+
 test("fails on missing srcset, CSS import, poster, and SVG references", () => {
   const root = mkdtempSync(join(tmpdir(), "oitate-p8-audit-"));
   const dist = join(root, "dist");
@@ -92,7 +118,7 @@ test("fails on missing srcset, CSS import, poster, and SVG references", () => {
   writeFileSync(join(dist, "index.html"), "<script src=\"/assets/missing.js\"></script>");
   writeFileSync(
     join(dist, "candidate.html"),
-    "<link rel=\"stylesheet\" href=\"./assets/candidate.css\"><img src=\"./media/bad.svg\"><video poster=\"./media/missing-poster.png\"></video><img srcset=\"data:image/svg+xml,%3Csvg%3E 1x, ./media/missing-after-data.png 2x\">",
+    "<link rel=\"stylesheet\" href=\"./assets/candidate.css\"><img src=\"./media/bad.svg\"><video poster=\"./media/missing-poster.png\"></video><img srcset=\"data:image/svg+xml,%3Csvg%3E 1x, ./media/missing-after-data.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, ./media/missing-descriptorless.png 2x\">",
   );
   writeFileSync(join(dist, ".vite", "manifest.json"), JSON.stringify({
     "index.html": { src: "index.html", file: "assets/missing.js", isEntry: true },
@@ -105,6 +131,7 @@ test("fails on missing srcset, CSS import, poster, and SVG references", () => {
   assert.equal(report.failures.some((failure) => failure.includes("missing local asset")), true);
   assert.equal(report.failures.some((failure) => failure.includes("missing Vite manifest asset")), true);
   assert.equal(report.failures.some((failure) => failure.includes("missing-after-data.png")), true);
+  assert.equal(report.failures.some((failure) => failure.includes("missing-descriptorless.png")), true);
 });
 
 test("classifies direct and transitive packages with complete manifests", () => {
@@ -166,7 +193,7 @@ test("fails when a required transitive dependency is absent from npm ls", () => 
   writeFileSync(join(transitivePath, "package.json"), JSON.stringify({
     name: "transitive",
     version: "2.0.0",
-    license: "Apache-2.0",
+    license: "UNKNOWN",
   }));
 
   const report = collectDependencyLicenses({
@@ -187,6 +214,7 @@ test("fails when a required transitive dependency is absent from npm ls", () => 
     report.failures.some((failure) => failure.includes("required dependency is missing from npm ls: runtime@1.0.0 -> transitive")),
     true,
   );
+  assert.equal(report.unknownLicenses.length, 0);
 });
 
 test("accepts a hoisted required dependency when npm ls omits a nested map", () => {
@@ -299,6 +327,10 @@ test("detects unknown tokens inside compound license expressions", () => {
     ["MIT AND unknown", true],
     ["(MIT OR UNKNOWN)", true],
     ["Apache-2.0 WITH unknown", true],
+    ["UNKNOWN,MIT", true],
+    ["MIT;unknown", true],
+    ["[NOASSERTION]", true],
+    ["UNKNOWNISH", false],
     ["MIT AND Apache-2.0", false],
   ];
 
