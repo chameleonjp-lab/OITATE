@@ -22,6 +22,14 @@ test("opens with a saved-progress stage menu and six content stages", async ({ p
   await expect(page.locator("#p7-stage-list [data-p7-stage='2']")).toBeDisabled();
 });
 
+test("shows the complete stage 4 objective in menu and play status", async ({ page }) => {
+  const objective = "誘導音の後に威嚇音を使い、保護対象6体を収容し、危険種1体を隔離する";
+  await expect(page.getByText(objective, { exact: true })).toBeVisible();
+  await page.evaluate(() => window.__OITATE_P7__.e2e?.openStage(4));
+  await expect(page.locator("#p7-stage-menu-overlay")).toBeHidden();
+  await expect(page.locator("#p7-stage-objective")).toHaveText(objective);
+});
+
 test("starts a selected stage and shows its central concept", async ({ page }) => {
   await page.locator("#p7-stage-list [data-p7-stage='1']").click();
   await expect(page.locator("#p7-stage-menu-overlay")).toBeHidden();
