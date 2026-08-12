@@ -18,6 +18,7 @@ const ENTRYPOINTS = [
   { name: "candidate", path: "candidate.html", manifestSource: null },
 ];
 const VITE_MANIFEST_PATHS = [".vite/manifest.json"];
+const MANIFEST_ARRAY_FIELDS = ["css", "assets", "imports", "dynamicImports"];
 
 function slashPath(value) {
   return value.split(sep).join("/");
