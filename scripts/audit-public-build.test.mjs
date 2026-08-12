@@ -150,7 +150,12 @@ test("ignores uninstalled optional platform packages", () => {
   const runtimePath = join(root, "node_modules", "runtime");
   mkdirSync(runtimePath, { recursive: true });
   writeFileSync(join(root, "package.json"), JSON.stringify({ dependencies: { runtime: "1.0.0" } }));
-  writeFileSync(join(runtimePath, "package.json"), JSON.stringify({ name: "runtime", version: "1.0.0", license: "MIT" }));
+  writeFileSync(join(runtimePath, "package.json"), JSON.stringify({
+    name: "runtime",
+    version: "1.0.0",
+    license: "MIT",
+    optionalDependencies: { "runtime-linux-x64": "1.0.0" },
+  }));
 
   const report = collectDependencyLicenses({
     rootDirectory: root,
