@@ -139,6 +139,38 @@ test("fails closed on npm ls errors, problems, missing dependencies, and unknown
   assert.equal(report.failures.some((failure) => failure.includes("declared dependency is missing")), true);
 });
 
+
+test("ignores uninstalled optional platform packages", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
+  const runtimePath = join(root, "node_modules", "runtime");
+  mkdirSync(runtimePath, { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({ dependencies: { runtime: "1.0.0" } }));
+  writeFileSync(join(runtimePath, "package.json"), JSON.stringify({ name: "runtime", version: "1.0.0", license: "MIT" }));
+
+  const report = collectDependencyLicenses({
+    rootDirectory: root,
+    dependencyTree: {
+      path: root,
+      dependencies: {
+        runtime: {
+          name: "runtime",
+          version: "1.0.0",
+          path: runtimePath,
+          dependencies: {
+            "runtime-linux-x64": {
+              name: "runtime-linux-x64",
+              version: "1.0.0",
+              optional: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  assert.deepEqual(report.failures, []);
+  assert.deepEqual(report.packages.map((item) => item.name), ["runtime"]);
+});
+
 test("fails on manifest mismatches and unknown license variants", () => {
   const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
   const runtimePath = join(root, "node_modules", "runtime");
