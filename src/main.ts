@@ -2275,6 +2275,19 @@ function runP7CompletionReplay(): void {
   }
   for (const route of p5Simulation.scenario.requiredRoutes) {
     p5Simulation.discoveredRoutes[route] = true;
+    const requiredAnimalType = p5Simulation.scenario.requiredRouteAnimalTypes[route];
+    const routeAnimal = p5Simulation.animals.find((animal) =>
+      requiredAnimalType ? animal.type === requiredAnimalType : animal.lifeState === "active"
+    );
+    if (routeAnimal) {
+      p5Simulation.events.push({
+        id: p5Simulation.events.length + 1,
+        type: "routeDiscovered",
+        atSeconds: 1,
+        subjectId: routeAnimal.id,
+        reason: route,
+      });
+    }
   }
   for (const eventType of p5Simulation.scenario.requiredEvents) {
     p5Simulation.events.push({
@@ -2285,6 +2298,7 @@ function runP7CompletionReplay(): void {
       reason: "deterministic-completion-fixture",
     });
   }
+  p5Simulation.eventSequence = p5Simulation.events.length;
   for (const animal of p5Simulation.animals.filter((candidate) => candidate.type !== "predator")) {
     const pen = p5Simulation.pens[animal.type];
     animal.x = pen.centerX;
