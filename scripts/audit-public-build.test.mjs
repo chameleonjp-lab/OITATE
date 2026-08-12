@@ -160,6 +160,43 @@ test("does not turn a standalone data URL into a local reference", () => {
   assert.equal(report.entrypoints[1].files.some((file) => file.path === "media/local.png"), true);
 });
 
+test("fails on multiline quoted and unquoted HTML asset attributes", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-audit-"));
+  const dist = join(root, "dist");
+  mkdirSync(join(dist, ".vite"), { recursive: true });
+  mkdirSync(join(dist, "assets"), { recursive: true });
+  mkdirSync(join(dist, "media"), { recursive: true });
+  writeFileSync(join(dist, "index.html"), "<script type=\"module\" src=\"/assets/main.js\"></script>");
+  writeFileSync(join(dist, "assets", "main.js"), "console.log('ok');");
+  writeFileSync(join(dist, "media", "existing.png"), "existing");
+  writeFileSync(
+    join(dist, "candidate.html"),
+    "<img srcset=\"./media/existing.png 1x,\\n ./media/missing-multiline.png 2x\">"
+      + "<link rel=\"preload\" as=\"image\" imagesrcset='./media/existing.png 1x,\\n ./media/missing-preload-multiline.png 2x'>"
+      + "<a href=./missing-download.pdf>download</a>"
+      + "<img src=./missing-src.png>"
+      + "<video poster=./missing-poster.jpg></video>",
+  );
+  writeManifest(dist, {
+    "index.html": { src: "index.html", file: "assets/main.js", isEntry: true },
+  });
+
+  const report = collectBuildAudit({ distDirectory: dist });
+  for (const missingPath of [
+    "missing-multiline.png",
+    "missing-preload-multiline.png",
+    "missing-download.pdf",
+    "missing-src.png",
+    "missing-poster.jpg",
+  ]) {
+    assert.equal(
+      report.failures.some((failure) => failure.includes(missingPath)),
+      true,
+      missingPath,
+    );
+  }
+});
+
 test("classifies direct and transitive packages with complete manifests", () => {
   const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
   const runtimePath = join(root, "node_modules", "runtime");
