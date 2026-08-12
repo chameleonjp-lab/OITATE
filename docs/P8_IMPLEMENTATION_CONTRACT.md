@@ -51,7 +51,7 @@
 - Viteの\`dist/.vite/manifest.json\`をゲーム入口のバンドル資産の正本とし、\`index.html\`と\`candidate.html\`の静的参照も照合する。
 - HTMLの\`src\`、\`href\`、\`srcset\`、\`poster\`、SVG参照、CSSの\`@import\`と\`url()\`を検査し、存在しないローカル参照をエラーにする。
 - 入口ごとの到達closureをgzip換算15MiB以下で判定し、dist全体の容量は参考値として残す。
-- \`npm ls --all --include=dev --json\`の非ゼロ終了、JSON不正、\`problems\`、宣言済み依存の欠落、依存ノードのpathとmanifestの不整合を成功扱いしない。
+- npm ls --all --include=dev --jsonの非ゼロ終了、JSON不正、problems、宣言済み依存の欠落、依存ノードのpathとmanifestの不整合を成功扱いしない。npmがoptionalとして示す、現在のOSへ入らない依存は実際にインストールされた一覧へ含めない。
 - 実際にインストールされた直接依存・開発依存・推移依存のライセンス情報を記録し、\`UNKNOWN\`（大文字小文字違いを含む）を失敗にする。
 - \`source head SHA\`と\`tested merge SHA\`を分けて記録する。監査結果は\`artifacts/p8-public-audit/report.json\`と\`report.md\`へ出力し、CI artifactへ必ず保存する。生成物がない場合はartifact保存も失敗させる。
 - \`vite preview\`を使うE2Eで要求失敗、4xx/5xx、画像読み込み失敗、console error、page errorを確認する。
