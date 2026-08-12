@@ -30,9 +30,9 @@ npm run e2e:preview
 - \`index.html\`と\`candidate.html\`から静的に到達できるファイルを追跡する。
 - HTMLの\`src\`、\`href\`、\`srcset\`、\`poster\`、SVGの参照、CSSの\`@import\`と\`url()\`を確認する。
 - 入口ごとの展開後容量とgzip換算容量を、15MiBの初回読み込み上限と比べる。dist全体値は参考情報として残す。
-- \`npm ls --all --include=dev --json\`の終了コード、JSON、\`problems\`、宣言済み依存の欠落、実体のmanifest不整合を確認する。
+- npm ls --all --include=dev --jsonの終了コード、JSON、problems、宣言済み依存の欠落、実体のmanifest不整合を確認する。現在のOSに入らない任意のOS向け依存は、npmがoptionalとして示し、実体pathがない場合は「インストール済み」として記録しない。
 - 実際にインストールされた直接依存・開発依存・推移依存のパッケージ名、版、ライセンスを記録する。
-- \`source head SHA\`と\`tested merge SHA\`を分けて記録する。
+- source head SHAとtested merge SHAをCIから明示的に受け取り、分けて記録する。
 
 Vite manifestがない、入口ごとのgzip換算容量が15MiBを超える、入口がない、ローカル参照が欠ける、依存ツリーが不完全、ライセンス情報が不明な場合は監査を失敗にします。
 
