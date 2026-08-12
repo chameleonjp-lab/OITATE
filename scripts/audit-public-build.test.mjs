@@ -171,8 +171,8 @@ test("fails on multiline quoted and unquoted HTML asset attributes", () => {
   writeFileSync(join(dist, "media", "existing.png"), "existing");
   writeFileSync(
     join(dist, "candidate.html"),
-    "<img srcset=\"./media/existing.png 1x,\\n ./media/missing-multiline.png 2x\">"
-      + "<link rel=\"preload\" as=\"image\" imagesrcset='./media/existing.png 1x,\\n ./media/missing-preload-multiline.png 2x'>"
+    "<img srcset=\"./media/existing.png 1x,\n ./media/missing-multiline.png 2x\">"
+      + "<link rel=\"preload\" as=\"image\" imagesrcset='./media/existing.png 1x,\n ./media/missing-preload-multiline.png 2x'>"
       + "<a href=./missing-download.pdf>download</a>"
       + "<img src=./missing-src.png>"
       + "<video poster=./missing-poster.jpg></video>",
