@@ -106,6 +106,8 @@ export interface P5SimulationScenario {
   predatorCount: number;
   requiredRoutes: P5Route[];
   requiredEvents: P5EventType[];
+  requiredEventSequence: P5EventType[];
+  requiredRouteAnimalTypes: Partial<Record<P5Route, P5AnimalType>>;
 }
 
 export const DEFAULT_P5_SCENARIO: P5SimulationScenario = {
@@ -114,6 +116,8 @@ export const DEFAULT_P5_SCENARIO: P5SimulationScenario = {
   predatorCount: 1,
   requiredRoutes: [],
   requiredEvents: [],
+  requiredEventSequence: [],
+  requiredRouteAnimalTypes: {},
 };
 
 export interface P5SimulationState {
@@ -318,6 +322,8 @@ export function createP5Simulation(
       predatorCount,
       requiredRoutes: [...scenario.requiredRoutes],
       requiredEvents: [...scenario.requiredEvents],
+      requiredEventSequence: [...scenario.requiredEventSequence],
+      requiredRouteAnimalTypes: { ...scenario.requiredRouteAnimalTypes },
     },
     animals,
     pens: {
@@ -534,11 +540,14 @@ function updateRouteDiscovery(state: P5SimulationState): P5Route | null {
   for (const animal of state.animals) {
     if (animal.lifeState === "disabled") continue;
     for (const [route, marker] of routeMarkers) {
-      if (inRect(animal.x, animal.z, marker) && !state.discoveredRoutes[route]) {
-        state.discoveredRoutes[route] = true;
-        recordEvent(state, "routeDiscovered", route, `${animal.id}-entered-route-marker`);
-        return route;
-      }
+      if (!inRect(animal.x, animal.z, marker) || state.discoveredRoutes[route]) continue;
+      const requiredAnimalType = state.scenario.requiredRouteAnimalTypes[route];
+      if (requiredAnimalType && animal.type !== requiredAnimalType) continue;
+      state.discoveredRoutes[route] = true;
+      // Keep the actual animal as the event subject so stage rules can verify
+      // which kind of animal used the route.
+      recordEvent(state, "routeDiscovered", animal.id, route);
+      return route;
     }
   }
   return null;
@@ -951,6 +960,26 @@ function updatePredator(
   return { rescued };
 }
 
+function hasRequiredRouteUsage(state: P5SimulationState, route: P5Route): boolean {
+  const requiredAnimalType = state.scenario.requiredRouteAnimalTypes[route];
+  if (!requiredAnimalType) return state.discoveredRoutes[route];
+  return state.events.some((event) =>
+    event.type === "routeDiscovered"
+    && event.reason === route
+    && getAnimal(state, event.subjectId)?.type === requiredAnimalType
+  );
+}
+
+function hasRequiredEventSequence(state: P5SimulationState): boolean {
+  let nextEventIndex = 0;
+  for (const event of state.events) {
+    if (event.type !== state.scenario.requiredEventSequence[nextEventIndex]) continue;
+    nextEventIndex += 1;
+    if (nextEventIndex >= state.scenario.requiredEventSequence.length) return true;
+  }
+  return state.scenario.requiredEventSequence.length === 0;
+}
+
 function updateCompletion(state: P5SimulationState): void {
   if (state.status !== "active") return;
   const preyCaptured = state.animals
@@ -959,12 +988,14 @@ function updateCompletion(state: P5SimulationState): void {
   const predator = getPredator(state);
   const predatorCaptured = !predator || predator.lifeState === "captured";
   const routesSatisfied = state.scenario.requiredRoutes.every(
-    (route) => state.discoveredRoutes[route],
+    (route) => hasRequiredRouteUsage(state, route),
   );
   const eventsSatisfied = state.scenario.requiredEvents.every(
     (eventType) => state.events.some((event) => event.type === eventType),
   );
-  if (preyCaptured && predatorCaptured && routesSatisfied && eventsSatisfied) {
+  const eventSequenceSatisfied = hasRequiredEventSequence(state);
+  if (preyCaptured && predatorCaptured && routesSatisfied
+    && eventsSatisfied && eventSequenceSatisfied) {
     state.status = "completed";
   }
 }
