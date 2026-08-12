@@ -1675,7 +1675,6 @@ function startP7Stage(stageId: P7StageId): void {
   if (!p7Mode || !isP7StageUnlocked(p7Progress, stageId)) return;
   recordP8Event("p7-stage-start", String(stageId));
   p7StageId = stageId;
-  p7StageStarted = true;
   p7MenuOpen = false;
   p7StageMenuOverlay.hidden = true;
   p7MenuCloseButton.hidden = true;
@@ -3025,7 +3024,6 @@ function getP7PublicState(): P7PublicState {
       completedStageIds: [...p7Progress.completedStageIds],
       unlockedStageIds: [...p7Progress.unlockedStageIds],
       records: { ...p7Progress.records },
-      attempts: { ...p7Progress.attempts },
     },
     result: p7Result,
   };
