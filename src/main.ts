@@ -388,24 +388,6 @@ root.innerHTML = `
         <span id="p7-stage-record-text">この面の記録 --</span>
       </section>
 
-      <aside class="diagnostics" data-testid="diagnostics" aria-label="開発用診断">
-        <strong>診断</strong>
-        <span id="diag-fps">FPS --</span>
-        <span id="diag-frame">フレーム -- ms</span>
-        <span id="diag-speed">速度 0.00</span>
-        <span id="diag-camera">手動カメラ 0.0秒 / 0%</span>
-        <span id="diag-owners">指 移:– 視:– 誘:– 威:–</span>
-        <span id="diag-cancel">解除 なし</span>
-        <span id="diag-rejected">競合拒否 0</span>
-        <span id="diag-signal">合図反応 -- ms</span>
-        <span id="diag-simulation">固定更新 遅延破棄 0.000秒</span>
-        <div class="p8-diagnostic-tools" id="p8-diagnostic-tools" data-testid="p8-diagnostic-tools" hidden>
-          <span id="p8-diagnostic-status">P8測定中：端末内だけで記録します</span>
-          <button type="button" data-action="p8-download">診断JSONを保存</button>
-          <button type="button" data-action="p8-reset">測定をリセット</button>
-        </div>
-      </aside>
-
       <div class="world-label animal-label" aria-hidden="true">臆病種 × 6</div>
       <div class="world-label player-label" aria-hidden="true">主人公</div>
       <div class="signal-feedback" id="signal-feedback" aria-live="polite"></div>
@@ -445,6 +427,24 @@ root.innerHTML = `
         </button>
       </div>
     </div>
+
+      <aside class="diagnostics" data-testid="diagnostics" aria-label="開発用診断">
+        <strong>診断</strong>
+        <span id="diag-fps">FPS --</span>
+        <span id="diag-frame">フレーム -- ms</span>
+        <span id="diag-speed">速度 0.00</span>
+        <span id="diag-camera">手動カメラ 0.0秒 / 0%</span>
+        <span id="diag-owners">指 移:– 視:– 誘:– 威:–</span>
+        <span id="diag-cancel">解除 なし</span>
+        <span id="diag-rejected">競合拒否 0</span>
+        <span id="diag-signal">合図反応 -- ms</span>
+        <span id="diag-simulation">固定更新 遅延破棄 0.000秒</span>
+        <div class="p8-diagnostic-tools" id="p8-diagnostic-tools" data-testid="p8-diagnostic-tools" hidden>
+          <span id="p8-diagnostic-status">P8測定中：端末内だけで記録します</span>
+          <button type="button" data-action="p8-download">診断JSONを保存</button>
+          <button type="button" data-action="p8-reset">測定をリセット</button>
+        </div>
+      </aside>
 
     <section class="blocking-overlay" id="orientation-overlay" role="dialog" aria-modal="true" aria-labelledby="orientation-title" tabindex="-1" hidden>
       <div class="overlay-card">
@@ -722,6 +722,7 @@ root.classList.toggle("p4-mode", p4Mode);
 root.classList.toggle("p5-mode", p5WorldMode);
 root.classList.toggle("p6-mode", p6Mode);
 root.classList.toggle("p7-mode", p7Mode);
+root.classList.toggle("p8-check", p8CheckEnabled);
 const diagnostics = {
   fps: required<HTMLElement>("#diag-fps"),
   frame: required<HTMLElement>("#diag-frame"),
