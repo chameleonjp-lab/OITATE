@@ -1149,7 +1149,6 @@ let p7Metrics = createP6RunMetrics(p6Settings.assistedMode);
 let p7Result: P7Result | null = null;
 let p7ResultShown = false;
 let p7MenuOpen = false;
-let p7StageStarted = false;
 
 function recordP8Event(type: string, detail?: string): void {
   p8Recorder?.recordEvent(type, activePlaySeconds, detail);
@@ -1358,8 +1357,7 @@ const input = new InputController(root, {
       clearSimulationDebt();
       blockInteraction(orientationOverlay);
     } else {
-      if (p7Mode && !p7StageStarted) showP7StageMenu(true);
-      else showResume("横画面へ戻りました");
+      showResume("横画面へ戻りました");
     }
   },
   onLifecyclePauseRequested: requestAutoPause,
@@ -2360,6 +2358,19 @@ function runP7CompletionReplay(): void {
   }
   for (const route of p5Simulation.scenario.requiredRoutes) {
     p5Simulation.discoveredRoutes[route] = true;
+    const requiredAnimalType = p5Simulation.scenario.requiredRouteAnimalTypes[route];
+    const routeAnimal = p5Simulation.animals.find((animal) =>
+      requiredAnimalType ? animal.type === requiredAnimalType : animal.lifeState === "active"
+    );
+    if (routeAnimal) {
+      p5Simulation.events.push({
+        id: p5Simulation.events.length + 1,
+        type: "routeDiscovered",
+        atSeconds: 1,
+        subjectId: routeAnimal.id,
+        reason: route,
+      });
+    }
   }
   for (const eventType of p5Simulation.scenario.requiredEvents) {
     p5Simulation.events.push({
@@ -2370,6 +2381,7 @@ function runP7CompletionReplay(): void {
       reason: "deterministic-completion-fixture",
     });
   }
+  p5Simulation.eventSequence = p5Simulation.events.length;
   for (const animal of p5Simulation.animals.filter((candidate) => candidate.type !== "predator")) {
     const pen = p5Simulation.pens[animal.type];
     animal.x = pen.centerX;
