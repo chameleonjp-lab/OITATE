@@ -129,10 +129,11 @@ function extractSrcsetReferences(value) {
 
 function extractHtmlAssetReferences(content) {
   const references = [];
-  const pattern = /\b(src|href|poster|srcset|imagesrcset|xlink:href)\s*=\s*(["'])(.*?)\2/gi;
+  const pattern =
+    /\b(src|href|poster|srcset|imagesrcset|xlink:href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
   for (const match of content.matchAll(pattern)) {
     const attribute = match[1].toLowerCase();
-    const reference = match[3];
+    const reference = match[2] ?? match[3] ?? match[4];
     if (attribute === "href" && [".", "./"].includes(withoutUrlSuffix(reference))) continue;
     if (attribute.endsWith("srcset")) {
       references.push(...extractSrcsetReferences(reference));
