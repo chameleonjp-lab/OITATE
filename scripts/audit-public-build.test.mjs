@@ -81,7 +81,12 @@ test("classifies direct and transitive packages with complete manifests", () => 
   const transitivePath = join(runtimePath, "node_modules", "transitive");
   mkdirSync(transitivePath, { recursive: true });
   writeFileSync(join(root, "package.json"), JSON.stringify({ dependencies: { runtime: "1.0.0" } }));
-  writeFileSync(join(runtimePath, "package.json"), JSON.stringify({ name: "runtime", version: "1.0.0", license: "MIT" }));
+  writeFileSync(join(runtimePath, "package.json"), JSON.stringify({
+    name: "runtime",
+    version: "1.0.0",
+    license: "MIT",
+    optionalDependencies: { "runtime-linux-x64": "1.0.0" },
+  }));
   writeFileSync(join(transitivePath, "package.json"), JSON.stringify({ name: "transitive", version: "2.0.0", licenses: [{ type: "Apache-2.0" }] }));
 
   const report = collectDependencyLicenses({
@@ -160,7 +165,6 @@ test("ignores uninstalled optional platform packages", () => {
             "runtime-linux-x64": {
               name: "runtime-linux-x64",
               version: "1.0.0",
-              optional: true,
             },
           },
         },
