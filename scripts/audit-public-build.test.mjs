@@ -118,7 +118,7 @@ test("fails on missing srcset, CSS import, poster, and SVG references", () => {
   writeFileSync(join(dist, "index.html"), "<script src=\"/assets/missing.js\"></script>");
   writeFileSync(
     join(dist, "candidate.html"),
-    "<link rel=\"stylesheet\" href=\"./assets/candidate.css\"><img src=\"./media/bad.svg\"><video poster=\"./media/missing-poster.png\"></video><img srcset=\"data:image/svg+xml,%3Csvg%3E 1x, ./media/missing-after-data.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, ./media/missing-descriptorless.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, missing.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, 画像.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E 1x, %E7%94%BB%E5%83%8F.png 2x\"><link rel=\"preload\" imagesrcset=\"data:image/svg+xml,%3Csvg%3E, missing-image.png 2x\">",
+    "<link rel=\"stylesheet\" href=\"./assets/candidate.css\"><img src=\"./media/bad.svg\"><video poster=\"./media/missing-poster.png\"></video><img srcset=\"data:image/svg+xml,%3Csvg%3E 1x, ./media/missing-after-data.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, ./media/missing-descriptorless.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, missing.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, 画像.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E 1x, %E7%94%BB%E5%83%8F.png 2x\"><link rel=\"preload\" imagesrcset=\"data:image/svg+xml,%3Csvg%3E, missing-image.png 2x\"><img srcset=\"https://example.test/image.png, missing-after-absolute.png 2x\"><img srcset=\"https://example.test/image,a.png, missing-after-comma.png 2x\"><link rel=\"preload\" imagesrcset=\"https://example.test/preload.png, missing-after-imagesrcset.png 2x\">",
   );
   writeFileSync(join(dist, ".vite", "manifest.json"), JSON.stringify({
     "index.html": { src: "index.html", file: "assets/missing.js", isEntry: true },
@@ -136,6 +136,9 @@ test("fails on missing srcset, CSS import, poster, and SVG references", () => {
   assert.equal(report.failures.some((failure) => failure.includes("画像.png")), true);
   assert.equal(report.failures.some((failure) => failure.includes("%E7%94%BB%E5%83%8F.png")), true);
   assert.equal(report.failures.some((failure) => failure.includes("missing-image.png")), true);
+  assert.equal(report.failures.some((failure) => failure.includes("missing-after-absolute.png")), true);
+  assert.equal(report.failures.some((failure) => failure.includes("missing-after-comma.png")), true);
+  assert.equal(report.failures.some((failure) => failure.includes("missing-after-imagesrcset.png")), true);
 });
 
 test("does not turn a standalone data URL into a local reference", () => {
