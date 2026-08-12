@@ -118,7 +118,7 @@ test("fails on missing srcset, CSS import, poster, and SVG references", () => {
   writeFileSync(join(dist, "index.html"), "<script src=\"/assets/missing.js\"></script>");
   writeFileSync(
     join(dist, "candidate.html"),
-    "<link rel=\"stylesheet\" href=\"./assets/candidate.css\"><img src=\"./media/bad.svg\"><video poster=\"./media/missing-poster.png\"></video><img srcset=\"data:image/svg+xml,%3Csvg%3E 1x, ./media/missing-after-data.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, ./media/missing-descriptorless.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, missing.png 2x\">",
+    "<link rel=\"stylesheet\" href=\"./assets/candidate.css\"><img src=\"./media/bad.svg\"><video poster=\"./media/missing-poster.png\"></video><img srcset=\"data:image/svg+xml,%3Csvg%3E 1x, ./media/missing-after-data.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, ./media/missing-descriptorless.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, missing.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E, 画像.png 2x\"><img srcset=\"data:image/svg+xml,%3Csvg%3E 1x, %E7%94%BB%E5%83%8F.png 2x\"><link rel=\"preload\" imagesrcset=\"data:image/svg+xml,%3Csvg%3E, missing-image.png 2x\">",
   );
   writeFileSync(join(dist, ".vite", "manifest.json"), JSON.stringify({
     "index.html": { src: "index.html", file: "assets/missing.js", isEntry: true },
@@ -133,6 +133,9 @@ test("fails on missing srcset, CSS import, poster, and SVG references", () => {
   assert.equal(report.failures.some((failure) => failure.includes("missing-after-data.png")), true);
   assert.equal(report.failures.some((failure) => failure.includes("missing-descriptorless.png")), true);
   assert.equal(report.failures.some((failure) => failure.includes("missing.png")), true);
+  assert.equal(report.failures.some((failure) => failure.includes("画像.png")), true);
+  assert.equal(report.failures.some((failure) => failure.includes("%E7%94%BB%E5%83%8F.png")), true);
+  assert.equal(report.failures.some((failure) => failure.includes("missing-image.png")), true);
 });
 
 test("does not turn a standalone data URL into a local reference", () => {
@@ -141,7 +144,9 @@ test("does not turn a standalone data URL into a local reference", () => {
   mkdirSync(join(dist, ".vite"), { recursive: true });
   mkdirSync(join(dist, "assets"), { recursive: true });
   writeFileSync(join(dist, "index.html"), "<script type=\"module\" src=\"/assets/main.js\"></script>");
-  writeFileSync(join(dist, "candidate.html"), "<img srcset=\"data:image/svg+xml,%3Csvg%3E,%3Cpath%3E\">");
+  mkdirSync(join(dist, "media"), { recursive: true });
+  writeFileSync(join(dist, "media", "local.png"), "local");
+  writeFileSync(join(dist, "candidate.html"), "<img srcset=\"data:image/svg+xml,%3Csvg%3E,%3Cpath%3E\"><img srcset=\"https://example.test/a,b.png 1x, ./media/local.png 2x\">");
   writeFileSync(join(dist, "assets", "main.js"), "console.log('ok');");
   writeManifest(dist, {
     "index.html": { src: "index.html", file: "assets/main.js", isEntry: true },
@@ -149,6 +154,7 @@ test("does not turn a standalone data URL into a local reference", () => {
 
   const report = collectBuildAudit({ distDirectory: dist });
   assert.deepEqual(report.failures, []);
+  assert.equal(report.entrypoints[1].files.some((file) => file.path === "media/local.png"), true);
 });
 
 test("classifies direct and transitive packages with complete manifests", () => {
@@ -385,6 +391,29 @@ test("merges repeated npm tree stubs before validating required edges", () => {
   assert.deepEqual(report.packages.map((item) => item.name), ["holder", "runtime", "transitive"]);
 });
 
+test("fails when an installed optional direct dependency is omitted from npm ls", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
+  const optionalPath = join(root, "node_modules", "optionalpkg");
+  mkdirSync(optionalPath, { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({
+    optionalDependencies: { optionalpkg: "1.0.0" },
+  }));
+  writeFileSync(join(optionalPath, "package.json"), JSON.stringify({
+    name: "optionalpkg",
+    version: "1.0.0",
+    license: "UNKNOWN",
+  }));
+
+  const report = collectDependencyLicenses({
+    rootDirectory: root,
+    dependencyTree: { path: root, dependencies: {} },
+  });
+  assert.equal(
+    report.failures.some((failure) => failure.includes("optional dependency is missing from npm ls: optionalpkg")),
+    true,
+  );
+});
+
 test("does not trust npm optional flags for required direct dependencies", () => {
   const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
   writeFileSync(join(root, "package.json"), JSON.stringify({
@@ -408,6 +437,109 @@ test("does not trust npm optional flags for required direct dependencies", () =>
     report.failures.some((failure) => failure.includes("required")),
     true,
   );
+});
+
+test("fails when installed optional transitive dependencies are omitted from npm ls", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
+  const runtimePath = join(root, "node_modules", "runtime");
+  const optionalPath = join(root, "node_modules", "optionalpkg");
+  mkdirSync(runtimePath, { recursive: true });
+  mkdirSync(optionalPath, { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({
+    dependencies: { runtime: "1.0.0" },
+  }));
+  writeFileSync(join(runtimePath, "package.json"), JSON.stringify({
+    name: "runtime",
+    version: "1.0.0",
+    license: "MIT",
+    optionalDependencies: { optionalpkg: "1.0.0" },
+  }));
+  writeFileSync(join(optionalPath, "package.json"), JSON.stringify({
+    name: "optionalpkg",
+    version: "1.0.0",
+    license: "UNKNOWN",
+  }));
+
+  const report = collectDependencyLicenses({
+    rootDirectory: root,
+    dependencyTree: {
+      path: root,
+      dependencies: {
+        runtime: { name: "runtime", version: "1.0.0", path: runtimePath },
+      },
+    },
+  });
+  assert.equal(
+    report.failures.some((failure) => failure.includes("optional dependency is missing from npm ls: runtime@1.0.0 -> optionalpkg")),
+    true,
+  );
+});
+
+test("fails when an installed optional peer is omitted from npm ls", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
+  const runtimePath = join(root, "node_modules", "runtime");
+  const peerPath = join(root, "node_modules", "optional-peer");
+  mkdirSync(runtimePath, { recursive: true });
+  mkdirSync(peerPath, { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({
+    dependencies: { runtime: "1.0.0" },
+  }));
+  writeFileSync(join(runtimePath, "package.json"), JSON.stringify({
+    name: "runtime",
+    version: "1.0.0",
+    license: "MIT",
+    peerDependencies: { "optional-peer": "1.0.0" },
+    peerDependenciesMeta: { "optional-peer": { optional: true } },
+  }));
+  writeFileSync(join(peerPath, "package.json"), JSON.stringify({
+    name: "optional-peer",
+    version: "1.0.0",
+    license: "UNKNOWN",
+  }));
+
+  const report = collectDependencyLicenses({
+    rootDirectory: root,
+    dependencyTree: {
+      path: root,
+      dependencies: {
+        runtime: { name: "runtime", version: "1.0.0", path: runtimePath },
+      },
+    },
+  });
+  assert.equal(
+    report.failures.some((failure) => failure.includes("optional dependency is missing from npm ls: runtime@1.0.0 -> optional-peer")),
+    true,
+  );
+});
+
+test("accepts an installed optional dependency when npm ls includes it", () => {
+  const root = mkdtempSync(join(tmpdir(), "oitate-p8-license-"));
+  const optionalPath = join(root, "node_modules", "optionalpkg");
+  mkdirSync(optionalPath, { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({
+    optionalDependencies: { optionalpkg: "1.0.0" },
+  }));
+  writeFileSync(join(optionalPath, "package.json"), JSON.stringify({
+    name: "optionalpkg",
+    version: "1.0.0",
+    license: "MIT",
+  }));
+
+  const report = collectDependencyLicenses({
+    rootDirectory: root,
+    dependencyTree: {
+      path: root,
+      dependencies: {
+        optionalpkg: {
+          name: "optionalpkg",
+          version: "1.0.0",
+          path: optionalPath,
+        },
+      },
+    },
+  });
+  assert.deepEqual(report.failures, []);
+  assert.deepEqual(report.packages.map((item) => item.name), ["optionalpkg"]);
 });
 
 test("uses parent manifests as the only optional dependency source", () => {
