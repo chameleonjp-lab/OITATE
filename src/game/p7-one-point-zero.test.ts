@@ -175,6 +175,43 @@ describe("P7 1.0 content progression", () => {
     expect(stage5State.status).toBe("completed");
   });
 
+  it("requires all seven stage 4 animals and states the same objective", () => {
+    const stage = getP7Stage(4);
+    expect(stage.objective).toBe(
+      "誘導音の後に威嚇音を使い、保護対象6体を収容し、危険種1体を隔離する",
+    );
+    const state = createP5Simulation(stage.simulation);
+    for (const animal of state.animals.filter((candidate) => candidate.type !== "predator")) {
+      animal.lifeState = "captured";
+      animal.phase = "captured";
+    }
+    state.events = [
+      {
+        id: 1,
+        type: "animalStartedFollowing",
+        atSeconds: 1,
+        subjectId: "follower-1",
+        reason: "test",
+      },
+      {
+        id: 2,
+        type: "predatorThreatAccepted",
+        atSeconds: 2,
+        subjectId: "predator-1",
+        reason: "test",
+      },
+    ];
+    stepP5Simulation(state, { x: 0, z: 0, speed: 0, isRunning: false }, 0.05);
+    expect(state.status).toBe("active");
+
+    const predator = state.animals.find((animal) => animal.type === "predator");
+    if (!predator) throw new Error("stage 4 test predator is missing");
+    predator.lifeState = "captured";
+    predator.phase = "captured";
+    stepP5Simulation(state, { x: 0, z: 0, speed: 0, isRunning: false }, 0.05);
+    expect(state.status).toBe("completed");
+  });
+
   it("unlocks the next stage, keeps best records, and gates the fourth animal", () => {
     let progress = createP7Progress();
     expect(isP7StageUnlocked(progress, 1)).toBe(true);
