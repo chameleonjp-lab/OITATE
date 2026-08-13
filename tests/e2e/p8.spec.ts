@@ -5,6 +5,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/candidate.html");
 });
 
+
 test("renders the P8 candidate page without external media", async ({ page }) => {
   await expect(page).toHaveTitle(/OITATE.*公開候補版/);
   await expect(page.locator("#hero-title")).toContainText("動物を直接命令せず、");
@@ -16,6 +17,17 @@ test("renders the P8 candidate page without external media", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "公開前の確認事項" })).toBeVisible();
   await expect(page.getByRole("link", { name: "P8正式仕様" })).toHaveAttribute("href", "https://github.com/chameleonjp-lab/OITATE/blob/main/docs/P8_FORMAL_SPEC.md");
   await expect(page.getByRole("link", { name: "更新履歴" })).toHaveAttribute("href", "https://github.com/chameleonjp-lab/OITATE/commits/main");
+
+  const statusPanel = page.locator(".status-panel");
+  const statusText = await statusPanel.textContent();
+  expect(statusText).not.toContain("\\n");
+  const statusLinks = page.locator(".status-links a");
+  await expect(statusLinks).toHaveCount(3);
+  for (const statusLink of await statusLinks.all()) {
+    await expect(statusLink).toBeVisible();
+  }
+  const statusDisplay = await page.locator(".status-links").evaluate((element) => getComputedStyle(element).display);
+  expect(statusDisplay).toBe("flex");
 });
 
 test("keeps the candidate page usable on a narrow viewport", async ({ page }) => {
@@ -29,4 +41,3 @@ test("keeps the candidate page usable on a narrow viewport", async ({ page }) =>
   await page.getByRole("link", { name: "遊び方を見る" }).click();
   await expect(page.getByRole("heading", { name: "三つのことを覚えれば始められます。" })).toBeInViewport();
 });
-
