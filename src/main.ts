@@ -394,7 +394,7 @@ root.innerHTML = `
         <span id="p7-stage-record-text">この面の記録 --</span>
       </section>
 
-      <div class="world-label animal-label" aria-hidden="true">臆病種 × 6</div>
+      <div class="world-label animal-label" aria-hidden="true">動物</div>
       <div class="world-label player-label" aria-hidden="true">主人公</div>
       <div class="signal-feedback" id="signal-feedback" aria-live="polite"></div>
 
@@ -600,6 +600,7 @@ const pauseReason = required<HTMLElement>("#pause-reason");
 const resumeButton = required<HTMLButtonElement>("[data-action='resume']");
 const pauseButton = required<HTMLButtonElement>("[data-action='pause']");
 const feedback = required<HTMLElement>("#signal-feedback");
+const animalLabel = required<HTMLElement>(".animal-label");
 const p2Status = required<HTMLElement>(".p2-status");
 const p2StatusText = required<HTMLElement>("#p2-status-text");
 const p2CountText = required<HTMLElement>("#p2-count-text");
@@ -1525,6 +1526,7 @@ function resetP5Prototype(): void {
   p5Simulation = createP5Simulation(
     p7Mode ? getP7Stage(p7StageId).simulation : undefined,
   );
+  updateAnimalLabel();
   p5DecisionAccumulator = 0;
   p5DecisionUpdates = 0;
   p5PendingGuidanceSignal = false;
@@ -2610,6 +2612,16 @@ function getP5CapturedCounts(): Record<P5AnimalType, number> {
   };
 }
 
+function updateAnimalLabel(): void {
+  const { cowardCount, followerCount, predatorCount } = p5Simulation.scenario;
+  const labels = [
+    cowardCount > 0 ? `臆病種 × ${cowardCount}` : null,
+    followerCount > 0 ? `追従種 × ${followerCount}` : null,
+    predatorCount > 0 ? `危険種 × ${predatorCount}` : null,
+  ].filter((label): label is string => label !== null);
+  animalLabel.textContent = labels.join("　") || "動物";
+}
+
 function updateP5Status(): void {
   const counts = getP5CapturedCounts();
   p5CountText.textContent = `臆病 ${counts.coward} / 6　追従 ${counts.follower} / 4　危険 ${counts.predator} / 1`;
@@ -2661,6 +2673,8 @@ function updateP5Status(): void {
   }
   p5StatusText.textContent = "臆病種は接近、追従種は誘導音、危険種は威嚇音に反応します";
 }
+
+updateAnimalLabel();
 
 function updateP3Visuals(interpolationAlpha: number): void {
   for (let index = 0; index < cowardVisuals.length; index += 1) {

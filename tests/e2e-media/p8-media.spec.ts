@@ -225,11 +225,14 @@ test("captures the three P8 gameplay media scenes", async ({ page }) => {
     await expect(page.locator("#p7-stage-objective")).toHaveText(scene.objective);
 
     if (scene.name === "position") {
+      await expect(page.locator(".animal-label")).toHaveText("臆病種 × 6");
       expect(p5State.animals.filter((animal) => animal.type === "coward" && animal.phase === "fleeing").length).toBeGreaterThanOrEqual(1);
     } else if (scene.name === "signal") {
+      await expect(page.locator(".animal-label")).toHaveText("追従種 × 4");
       expect(p5State.animals.filter((animal) => animal.type === "follower" && animal.phase === "following").length).toBeGreaterThanOrEqual(1);
       expect(p5State.lastEvent?.type).toBe("animalStartedFollowing");
     } else {
+      await expect(page.locator(".animal-label")).toHaveText("臆病種 × 1　危険種 × 1");
       expect(p5State.animals.filter((animal) => animal.type === "predator" && animal.phase === "aim").length).toBeGreaterThanOrEqual(1);
       expect(p5State.lastEvent?.type).toBe("predatorAimStarted");
     }
