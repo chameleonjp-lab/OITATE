@@ -31,12 +31,12 @@
 
 ## 未確認・後続作業
 
-- [x] run #89（workflow/run ID `31691934450`、source head `92f4b74dad427be01027ab490db74aaf607d4492`、tested merge SHA `4e9d3a9ea9d0e9e517611aac5903af7557bff598`）のCI artifact `p8-public-audit`で、推移依存を含む61パッケージのライセンス一覧とUNKNOWN 0を確認した。これは自動監査の記録であり、実機・手動・動画・公開品質・公開承認を完了扱いにしない。
+- [x] run #89（workflow/run ID `31691934450`、source head `92f4b74dad427be01027ab490db74aaf607d4492`、tested merge SHA `949bd8ec7b1a23a221b4d39902a2317adda94078`）のCI artifact `p8-public-audit`で、推移依存を含む61パッケージのライセンス一覧とUNKNOWN 0を確認した。これは自動監査の記録であり、実機・手動・動画・公開品質・公開承認を完了扱いにしない。
 - [ ] 目標端末の実機スクリーンショット3枚以上を別証跡として取得する
 - [ ] 15〜30秒の紹介映像を作成する
 - [ ] 目標端末で容量・性能・読み込みを測る
 - [ ] 公開直前の固定版と台帳を照合する
 - [ ] P8-B診断JSONの記録方式を公開前の確認票へ反映する
-- [x] run #89のCI artifact `p8-public-audit`で、candidate入口のgzip換算353,069 bytes、入口・容量・ライセンス結果を確認した（source head `92f4b74dad427be01027ab490db74aaf607d4492`、tested merge SHA `4e9d3a9ea9d0e9e517611aac5903af7557bff598`）。
+- [x] run #89のCI artifact `p8-public-audit`で、candidate入口のgzip換算353,069 bytes、入口・容量・ライセンス結果を確認した（source head `92f4b74dad427be01027ab490db74aaf607d4492`、tested merge SHA `949bd8ec7b1a23a221b4d39902a2317adda94078`）。
 
 候補ページと自作SVGは、外部サーバーから画像やフォントを取得しない。Herdy Gerdyの名称、画像、ロゴは使用していない。

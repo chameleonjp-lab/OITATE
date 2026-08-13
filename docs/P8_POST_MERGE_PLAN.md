@@ -4,7 +4,7 @@
 
 P8-D「再現可能な実ゲーム画面3場面」はPR #22として`main`へマージ済みです。本計画は、P8-D後の文書整合と、公開前に残る確認を順序立てて記録するdocumentation-onlyの計画です。
 
-P8-DのPR #22 merge前最終CI成功はrun #89（workflow/run ID `31691934450`）で、source headは`92f4b74dad427be01027ab490db74aaf607d4492`、tested merge SHAは`4e9d3a9ea9d0e9e517611aac5903af7557bff598`です。自動runとartifactは再現性を示す証拠ですが、実機確認、手動受入、初見確認、動画、公開品質、公開承認とは別のものとして扱います。
+P8-DのPR #22 merge前最終CI成功はrun #89（workflow/run ID `31691934450`）で、source headは`92f4b74dad427be01027ab490db74aaf607d4492`、tested merge SHAは`949bd8ec7b1a23a221b4d39902a2317adda94078`です。自動runとartifactは再現性を示す証拠ですが、実機確認、手動受入、初見確認、動画、公開品質、公開承認とは別のものとして扱います。
 
 ## 5つの視点
 
