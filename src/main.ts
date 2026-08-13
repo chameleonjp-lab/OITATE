@@ -2466,6 +2466,21 @@ function prepareMediaScene(scene: P8MediaScene): void {
 
   if (scene === "signal") {
     prepareMediaStage(2);
+    const mediaFollowerPositions: Array<[number, number]> = [
+      [1.5, 1.0],
+      [2.6, 1.4],
+      [3.7, 1.0],
+      [4.8, 1.4],
+    ];
+    for (const [index, animal] of p5Simulation.animals
+      .filter((candidate) => candidate.type === "follower")
+      .entries()) {
+      const [x, z] = mediaFollowerPositions[index] ?? [2.5 + index, 1.2];
+      animal.x = x;
+      animal.z = z;
+      animal.previousX = x;
+      animal.previousZ = z;
+    }
     const fastMarker = p5Simulation.terrain.fastMarker;
     simulationPosition.set(
       (fastMarker.minX + fastMarker.maxX) / 2,

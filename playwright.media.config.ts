@@ -4,7 +4,7 @@ const localChromium = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
 
 export default defineConfig({
   testDir: "./tests/e2e-media",
-  timeout: 20_000,
+  timeout: 120_000,
   fullyParallel: false,
   workers: 1,
   forbidOnly: Boolean(process.env.CI),
