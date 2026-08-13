@@ -4,20 +4,22 @@
 
 ## 自動確認
 
-- [ ] 候補ページが表示される
-- [ ] ページ内リンクが存在する
-- [ ] ゲーム開始リンクが`?p7=1`を指す
-- [ ] 画像がすべて読み込める
-- [ ] 横方向のはみ出しがない
-- [ ] `?p7=1`の既存ブラウザ試験が通る
-- [ ] 開発時の`?p8-check=1`で診断JSONを保存できる
-- [ ] 通常の`?p7=1`では診断操作を表示しない
-- [ ] `npm run test:audit`が通る
-- [ ] `npm run audit:public`でJSONとMarkdownが生成される
-- [ ] CI artifact `p8-public-audit`へ監査結果が保存される
-- [ ] `vite preview`のE2Eで要求失敗、4xx/5xx、画像読み込み失敗、console error、page errorがない
-- [ ] source head SHAとtested merge SHAが別々に記録される
-- [ ] `npm run capture:p8-media`で3場面を再生成でき、CI artifact `p8-gameplay-media`へ保存される
+CIの成功run（最終成功runはDraft PR本文に記録）で、次の自動確認を完了した。
+
+- [x] 候補ページが表示される
+- [x] ページ内リンクが存在する
+- [x] ゲーム開始リンクが`?p7=1`を指す
+- [x] 画像がすべて読み込める
+- [x] 横方向のはみ出しがない
+- [x] `?p7=1`の既存ブラウザ試験が通る
+- [x] 開発時の`?p8-check=1`で診断JSONを保存できる
+- [x] 通常の`?p7=1`では診断操作を表示しない
+- [x] `npm run test:audit`が通る
+- [x] `npm run audit:public`でJSONとMarkdownが生成される
+- [x] CI artifact `p8-public-audit`へ監査結果が保存される
+- [x] `vite preview`のE2Eで要求失敗、4xx/5xx、画像読み込み失敗、console error、page errorがない
+- [x] source head SHAとtested merge SHAが別々に記録される
+- [x] `npm run capture:p8-media`で3場面を再生成でき、CI artifact `p8-gameplay-media`へ保存される
 
 ## 候補ページの手動確認
 

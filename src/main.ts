@@ -2613,6 +2613,10 @@ function getP5CapturedCounts(): Record<P5AnimalType, number> {
 }
 
 function updateAnimalLabel(): void {
+  if (!p7Mode) {
+    animalLabel.textContent = "臆病種 × 6";
+    return;
+  }
   const { cowardCount, followerCount, predatorCount } = p5Simulation.scenario;
   const labels = [
     cowardCount > 0 ? `臆病種 × ${cowardCount}` : null,
