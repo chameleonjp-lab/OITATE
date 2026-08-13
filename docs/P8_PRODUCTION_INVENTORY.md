@@ -37,6 +37,6 @@
 - [ ] 目標端末で容量・性能・読み込みを測る
 - [ ] 公開直前の固定版と台帳を照合する
 - [ ] P8-B診断JSONの記録方式を公開前の確認票へ反映する
-- [x] P8-C監査artifactの容量・入口・ライセンス結果を確認する（成功runの`p8-public-audit`、candidate gzip 352,808 bytes）
+- [x] P8-C監査artifactの容量・入口・ライセンス結果を確認する（成功runの`p8-public-audit`、candidate gzip 353,069 bytes）
 
 候補ページと自作SVGは、外部サーバーから画像やフォントを取得しない。Herdy Gerdyの名称、画像、ロゴは使用していない。

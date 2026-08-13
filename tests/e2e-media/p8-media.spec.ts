@@ -171,7 +171,8 @@ function buildReport(
 ): string {
   const sceneRows = scenes.map((scene) => {
     const visual = scene.visualSample;
-    return `| ${scene.scene} | ${scene.filename} | ${scene.stage.id} ${scene.stage.title} | ${scene.fileBytes} | ${visual.luminanceRange.toFixed(1)} | ${visual.distinctColors} | ${visual.nonDarkRatio.toFixed(3)} |`;
+    const stageTitle = scene.stage.title.replace(/^\d+\s*/, "");
+    return `| ${scene.scene} | ${scene.filename} | ${scene.stage.id} ${stageTitle} | ${scene.fileBytes} | ${visual.luminanceRange.toFixed(1)} | ${visual.distinctColors} | ${visual.nonDarkRatio.toFixed(3)} |`;
   });
   return [
     "# P8 gameplay media capture",
