@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   build: {
+    manifest: true,
     chunkSizeWarningLimit: 600,
   },
   server: {

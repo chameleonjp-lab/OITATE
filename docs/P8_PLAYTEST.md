@@ -15,6 +15,8 @@
 - [ ] `npm run test:audit`が通る
 - [ ] `npm run audit:public`でJSONとMarkdownが生成される
 - [ ] CI artifact `p8-public-audit`へ監査結果が保存される
+- [ ] `vite preview`のE2Eで要求失敗、4xx/5xx、画像読み込み失敗、console error、page errorがない
+- [ ] source head SHAとtested merge SHAが別々に記録される
 
 ## 候補ページの手動確認
 
