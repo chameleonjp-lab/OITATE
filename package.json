@@ -15,7 +15,8 @@
     "test:audit": "node --test scripts/audit-public-build.test.mjs",
     "audit:public": "node scripts/audit-public-build.mjs",
     "preview": "vite preview",
-    "e2e:preview": "playwright test --config=playwright.preview.config.ts"
+    "e2e:preview": "playwright test --config=playwright.preview.config.ts",
+    "capture:p8-media": "playwright test --config=playwright.media.config.ts"
   },
   "dependencies": {
     "three": "0.185.1"
