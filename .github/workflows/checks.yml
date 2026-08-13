@@ -49,3 +49,15 @@ jobs:
         run: npm run e2e
       - name: Preview browser health tests
         run: npm run e2e:preview
+      - name: Generate P8 gameplay media
+        env:
+          P8_SOURCE_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          P8_TESTED_MERGE_SHA: ${{ github.sha }}
+        run: npm run capture:p8-media
+      - name: Upload P8 gameplay media
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p8-gameplay-media
+          path: artifacts/p8-gameplay-media
+          if-no-files-found: error

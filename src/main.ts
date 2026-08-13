@@ -251,11 +251,17 @@ interface P7E2ETestHooks {
   runCompletionReplay: () => void;
 }
 
+type P8MediaScene = "position" | "signal" | "danger";
+
+interface P8E2ETestHooks {
+  prepareMediaScene: (scene: P8MediaScene) => void;
+}
+
 interface P7PublicApi {
   getState: () => P7PublicState;
   retry: () => void;
   openMenu: () => void;
-  e2e?: P7E2ETestHooks;
+  e2e?: P7E2ETestHooks & P8E2ETestHooks;
 }
 
 interface P8DiagnosticReport {
@@ -2402,6 +2408,96 @@ function runP7CompletionReplay(): void {
   clearSimulationDebt();
 }
 
+function prepareMediaStage(stageId: P7StageId): void {
+  if (!p7Mode) return;
+  if (!p7Progress.unlockedStageIds.includes(stageId)) {
+    p7Progress = {
+      ...p7Progress,
+      unlockedStageIds: [...p7Progress.unlockedStageIds, stageId].sort(
+        (first, second) => first - second,
+      ),
+    };
+  }
+  startP7Stage(stageId);
+}
+
+function pausePreparedMediaScene(): void {
+  paused = true;
+  resumeRequired = false;
+  input.clearAllInput("manual-clear");
+  clearSimulationDebt();
+}
+
+function prepareMediaScene(scene: P8MediaScene): void {
+  if (!p7Mode || !p7E2EEnabled) return;
+
+  if (scene === "position") {
+    prepareMediaStage(1);
+    const firstCoward = p5Simulation.animals.find((animal) => animal.id === "coward-1");
+    if (!firstCoward) throw new Error("P8 position media fixture is incomplete");
+    const nearestCoward = p5Simulation.animals
+      .filter((animal) => animal.type === "coward" && animal.id !== firstCoward.id)
+      .sort((first, second) => {
+        const firstDistance = Math.hypot(first.x - firstCoward.x, first.z - firstCoward.z);
+        const secondDistance = Math.hypot(second.x - firstCoward.x, second.z - firstCoward.z);
+        return firstDistance - secondDistance;
+      })[0];
+    const awayX = firstCoward.x - (nearestCoward?.x ?? firstCoward.x);
+    const awayZ = firstCoward.z - (nearestCoward?.z ?? firstCoward.z);
+    const awayLength = Math.hypot(awayX, awayZ) || 1;
+    const pressureDistance = P5_TUNING.cowardPressureDistance - 1;
+    simulationPosition.set(
+      firstCoward.x + (awayX / awayLength) * pressureDistance,
+      0,
+      firstCoward.z + (awayZ / awayLength) * pressureDistance,
+    );
+    previousSimulationPosition.copy(simulationPosition);
+    player.position.copy(simulationPosition);
+    stepP5DecisionAtPlayer(
+      simulationPosition.x,
+      simulationPosition.z,
+      0,
+      false,
+      P5_DECISION_SECONDS,
+    );
+    pausePreparedMediaScene();
+    return;
+  }
+
+  if (scene === "signal") {
+    prepareMediaStage(2);
+    const fastMarker = p5Simulation.terrain.fastMarker;
+    simulationPosition.set(
+      (fastMarker.minX + fastMarker.maxX) / 2,
+      0,
+      (fastMarker.minZ + fastMarker.maxZ) / 2,
+    );
+    previousSimulationPosition.copy(simulationPosition);
+    player.position.copy(simulationPosition);
+    p5PendingGuidanceSignal = true;
+    stepP5DecisionAtPlayer(
+      simulationPosition.x,
+      simulationPosition.z,
+      0,
+      false,
+      P5_DECISION_SECONDS,
+    );
+    pausePreparedMediaScene();
+    return;
+  }
+
+  prepareMediaStage(3);
+  const victim = p5Simulation.animals.find((animal) => animal.id === "coward-1");
+  const predator = p5Simulation.animals.find((animal) => animal.id === "predator-1");
+  if (!victim || !predator) throw new Error("P8 danger media fixture is incomplete");
+  predator.x = victim.x;
+  predator.z = victim.z - 1.1;
+  predator.previousX = predator.x;
+  predator.previousZ = predator.z;
+  stepP5DecisionAtPlayer(10, 10, 0, false, P5_DECISION_SECONDS);
+  pausePreparedMediaScene();
+}
+
 function resize(): void {
   const width = Math.max(1, root.clientWidth);
   const height = Math.max(1, root.clientHeight);
@@ -3251,6 +3347,7 @@ const p7Api: P7PublicApi = {
             startP7Stage(stageId);
           },
           runCompletionReplay: runP7CompletionReplay,
+          prepareMediaScene,
         },
       }
     : {}),
