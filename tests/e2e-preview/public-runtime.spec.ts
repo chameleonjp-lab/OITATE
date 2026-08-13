@@ -59,3 +59,11 @@ test("keeps the P7 E2E hook out of the production preview", async ({ page }) => 
   expect(await page.evaluate(() => typeof window.__OITATE_P7__.e2e)).toBe("undefined");
   await expectHealthy(page, failures);
 });
+
+test("preserves the legacy animal label outside the P7 media mode", async ({ page }) => {
+  const failures = observeRuntime(page);
+  await page.goto("/?p1-probe=1", { waitUntil: "domcontentloaded" });
+  await expect(page.locator("#app")).toHaveAttribute("data-ready", "true", { timeout: 15_000 });
+  await expect(page.locator(".animal-label")).toHaveText("臆病種 × 6");
+  await expectHealthy(page, failures);
+});
