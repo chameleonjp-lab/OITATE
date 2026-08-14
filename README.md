@@ -23,9 +23,13 @@
 
 ## 現在の状態
 
-P7「1.0内容完成」の6面進行・記録保存・面別条件、P8-A「公開候補ページの基盤」、P8-B「公開前測定基盤」、P8-C「公開前証跡基盤」は`main`へマージ済みです。P8-D「再現可能な実ゲーム画面3場面」もPR #22として`main`へマージ済みです。PR #22のmerge前最終CIはrun #89（workflow/run ID `31691934450`、source head `92f4b74dad427be01027ab490db74aaf607d4492`、tested merge SHA `949bd8ec7b1a23a221b4d39902a2317adda94078`）です。`public/candidate.html`（配信時は`candidate.html`）で、ゲームの目的、遊び方、対応端末、補助設定、権利表示、既知の注意を確認できます。ゲーム本体は`?p7=1`で起動します。
+P7「1.0内容完成」とP8-A〜P8-Dは`main`へマージ済みです。P8-E「公開前証跡再照合」もPR #24として`main`へマージ済みで、次はP8-F「P4〜P7の手動受入・初見・実機確認」です。
 
-P4〜P7の手動受入、初見テスト、実機・性能確認は未確認のままです。候補ページには、Chromiumの開発実行から再現可能に取得した実ゲーム画面3枚を掲載しています。これは実機スクリーンショットではありません。run #89の自動確認は実機確認、手動受入、紹介動画、公開品質、公開承認を完了扱いにしません。目標端末の実機スクリーンショット、15〜30秒の紹介映像、公開直前の権利確認、ユーザーの公開承認は未完了のまま、公開前に追加確認します。GitHub Pagesへの公開、検索掲載、一般共有は、公開品質条件とユーザーの明示承認が揃うまで行いません。
+PR #22のmerge前最終CIはrun #89（workflow/run ID `31691934450`、source head `92f4b74dad427be01027ab490db74aaf607d4492`、tested merge SHA `949bd8ec7b1a23a221b4d39902a2317adda94078`）です。`public/candidate.html`（配信時は`candidate.html`）で、ゲームの目的、遊び方、対応端末、補助設定、権利表示、既知の注意を確認できます。ゲーム本体は`?p7=1`で起動します。
+
+P4〜P7の手動受入、初見テスト、実機・性能確認はまだ完了していません。自動CIや開発Chromiumの画像を、実機・初見・公開品質の証拠には読み替えません。P8-Fでは[P8-F 手動・初見・実機確認マトリクス](docs/P8_MANUAL_ACCEPTANCE_MATRIX.md)に加え、[P8-F 手動受入 実行手順](docs/P8F_MANUAL_TEST_RUNBOOK.md)と[P8-F 記録テンプレート](docs/P8F_EVIDENCE_TEMPLATE.md)を使います。
+
+目標端末の実機スクリーンショット、15〜30秒の紹介映像、公開直前の権利確認、最終独立レビュー、ユーザーの公開承認は未完了です。GitHub Pagesへの公開、検索掲載、一般共有は、公開品質条件とユーザーの明示承認が揃うまで行いません。
 
 ### 開発用コマンド
 
@@ -49,4 +53,7 @@ npm run capture:p8-media
 - [P8公開前監査の使い方](docs/P8_PUBLIC_AUDIT.md)
 - [P8実ゲーム画面の撮影手順](docs/P8_MEDIA_CAPTURE.md)
 - [P8-Dマージ後フォローアップ計画](docs/P8_POST_MERGE_PLAN.md)
+- [P8-F 手動・初見・実機確認マトリクス](docs/P8_MANUAL_ACCEPTANCE_MATRIX.md)
+- [P8-F 手動受入 実行手順](docs/P8F_MANUAL_TEST_RUNBOOK.md)
+- [P8-F 記録テンプレート](docs/P8F_EVIDENCE_TEMPLATE.md)
 - [公開候補ページ](public/candidate.html)
