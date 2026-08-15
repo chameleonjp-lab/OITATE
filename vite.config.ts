@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  base: "/oitate/",
   build: {
     manifest: true,
     chunkSizeWarningLimit: 600,
