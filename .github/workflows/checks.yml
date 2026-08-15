@@ -37,7 +37,7 @@ jobs:
           P8_TESTED_MERGE_SHA: ${{ github.sha }}
         run: npm run audit:public
       - name: Upload P8 public audit
-        if: always()
+        if: ${{ always() && hashFiles('artifacts/p8-public-audit/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: p8-public-audit
@@ -55,7 +55,7 @@ jobs:
           P8_TESTED_MERGE_SHA: ${{ github.sha }}
         run: npm run capture:p8-media
       - name: Upload P8 gameplay media
-        if: always()
+        if: ${{ always() && hashFiles('artifacts/p8-gameplay-media/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: p8-gameplay-media
