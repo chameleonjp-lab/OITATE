@@ -43,8 +43,8 @@ jobs:
           name: p8-public-audit
           path: artifacts/p8-public-audit/
           if-no-files-found: error
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install Chromium and WebKit
+        run: npx playwright install --with-deps chromium webkit
       - name: Browser tests
         run: npm run e2e
       - name: Preview browser health tests
