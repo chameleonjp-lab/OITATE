@@ -335,6 +335,7 @@ export class InputController {
     if (deltaX === 0) return;
     this.cameraYaw = normalizeAngle(this.cameraYaw - deltaX * 0.006);
     this.movementBasisTargetYaw = this.cameraYaw;
+    this.movementBasisYaw = this.cameraYaw;
   };
 
   private readonly onCameraUp = (event: PointerEvent): void => {
