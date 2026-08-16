@@ -19,11 +19,10 @@ describe("P5 movement regressions", () => {
     const moving = animalById(state, "coward-1");
     const blocker = animalById(state, "coward-2");
 
-    // coward-1 is near the left world edge. The player pushes it toward -Z,
-    // while an active coward blocks the direct path. On this first simulation
-    // step the moving sheep must reject the clamped negative-X fallback and
-    // choose the open positive-X side instead.
-    moving.x = P5_TUNING.worldMin + moving.radius + 0.03;
+    // coward-1 is exactly against the left world edge. The player pushes it
+    // toward -Z while an active coward blocks the direct path. The negative-X
+    // fallback cannot move at all, so the open positive-X side must be tried.
+    moving.x = P5_TUNING.worldMin + moving.radius;
     moving.z = 5;
     moving.previousX = moving.x;
     moving.previousZ = moving.z;
