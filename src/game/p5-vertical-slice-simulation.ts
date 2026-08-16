@@ -450,12 +450,16 @@ function tryMoveCandidate(
   x: number,
   z: number,
 ): boolean {
-  const constrained = constrainAnimalAgainstPens(state, animal, x, z);
-  if (!canOccupy(state, animal, constrained.x, constrained.z)
-    || !isAnimalClearOfPeers(state, animal, constrained.x, constrained.z)) return false;
-  if (distance(animal.x, animal.z, constrained.x, constrained.z) <= EPSILON) return false;
-  animal.x = constrained.x;
-  animal.z = constrained.z;
+  const worldX = clamp(x, WORLD_MIN + animal.radius, WORLD_MAX - animal.radius);
+  const worldZ = clamp(z, WORLD_MIN + animal.radius, WORLD_MAX - animal.radius);
+  const constrained = constrainAnimalAgainstPens(state, animal, worldX, worldZ);
+  const finalX = clamp(constrained.x, WORLD_MIN + animal.radius, WORLD_MAX - animal.radius);
+  const finalZ = clamp(constrained.z, WORLD_MIN + animal.radius, WORLD_MAX - animal.radius);
+  if (!canOccupy(state, animal, finalX, finalZ)
+    || !isAnimalClearOfPeers(state, animal, finalX, finalZ)) return false;
+  if (distance(animal.x, animal.z, finalX, finalZ) <= EPSILON) return false;
+  animal.x = finalX;
+  animal.z = finalZ;
   return true;
 }
 
