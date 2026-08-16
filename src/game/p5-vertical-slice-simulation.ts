@@ -1031,12 +1031,9 @@ export function stepP5Simulation(
     || !finite(player.x) || !finite(player.z) || !finite(player.speed)) return emptyResult;
 
   for (const animal of state.animals) {
+    if (animal.lifeState === "captured" || animal.lifeState === "disabled") continue;
     animal.previousX = animal.x;
     animal.previousZ = animal.z;
-    if (animal.lifeState === "captured" || animal.lifeState === "disabled") {
-      animal.lastMoveX = 0;
-      animal.lastMoveZ = 0;
-    }
   }
   state.elapsedSeconds += deltaSeconds;
   state.guidanceSignalSeconds = Math.max(0, state.guidanceSignalSeconds - deltaSeconds);
