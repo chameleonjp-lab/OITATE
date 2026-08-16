@@ -308,8 +308,6 @@ export function createP5Simulation(
     const [x, z] = followerPositions[index] ?? [7, 6];
     animals.push(createAnimal(`follower-${index + 1}`, "follower", x, z));
   }
-  // Keep the predator outside the fast-route marker at spawn; route
-  // discovery must represent an animal crossing a route, not initial setup.
   if (predatorCount > 0) animals.push(createAnimal("predator-1", "predator", 3.6, 0.8));
 
   return {
@@ -385,8 +383,6 @@ function canOccupy(
   const water = inRect(x, z, state.terrain.water);
   if (!water) return true;
   if (animal.type === "coward") return false;
-  // Followers and the predator can use both the bridge and the shallow
-  // water. Cowards must route around the water, including the bridge.
   return true;
 }
 
@@ -448,6 +444,21 @@ function constrainAnimalAgainstPens(
   );
 }
 
+function tryMoveCandidate(
+  state: P5SimulationState,
+  animal: P5AnimalState,
+  x: number,
+  z: number,
+): boolean {
+  const constrained = constrainAnimalAgainstPens(state, animal, x, z);
+  if (!canOccupy(state, animal, constrained.x, constrained.z)
+    || !isAnimalClearOfPeers(state, animal, constrained.x, constrained.z)) return false;
+  if (distance(animal.x, animal.z, constrained.x, constrained.z) <= EPSILON) return false;
+  animal.x = constrained.x;
+  animal.z = constrained.z;
+  return true;
+}
+
 function moveAnimal(
   state: P5SimulationState,
   animal: P5AnimalState,
@@ -468,11 +479,7 @@ function moveAnimal(
     const escapeX = animal.x <= (state.terrain.water.minX + state.terrain.water.maxX) / 2
       ? state.terrain.water.minX - animal.radius - 0.05
       : state.terrain.water.maxX + animal.radius + 0.05;
-    // This branch is a deterministic recovery from an invalid forced
-    // placement; move to the first valid position outside the water rather
-    // than spending every tick inside an unoccupiable cell.
-    const escapeXPosition = escapeX;
-    const constrainedEscape = constrainAnimalAgainstPens(state, animal, escapeXPosition, animal.z);
+    const constrainedEscape = constrainAnimalAgainstPens(state, animal, escapeX, animal.z);
     if (isAnimalClearOfPeers(state, animal, constrainedEscape.x, constrainedEscape.z)
       && canOccupy(state, animal, constrainedEscape.x, constrainedEscape.z)) {
       animal.x = constrainedEscape.x;
@@ -481,36 +488,36 @@ function moveAnimal(
     clampWorld(animal);
     return;
   }
-  const nextX = animal.x + direction.x * speed * deltaSeconds;
-  const nextZ = animal.z + direction.z * speed * deltaSeconds;
-  const constrainedNext = constrainAnimalAgainstPens(state, animal, nextX, nextZ);
-  const constrainedZ = constrainAnimalAgainstPens(state, animal, animal.x, nextZ);
-  const constrainedX = constrainAnimalAgainstPens(state, animal, nextX, animal.z);
-  if (canOccupy(state, animal, constrainedNext.x, constrainedNext.z)
-    && isAnimalClearOfPeers(state, animal, constrainedNext.x, constrainedNext.z)) {
-    animal.x = constrainedNext.x;
-    animal.z = constrainedNext.z;
-  } else if (canOccupy(state, animal, constrainedZ.x, constrainedZ.z)
-    && isAnimalClearOfPeers(state, animal, constrainedZ.x, constrainedZ.z)) {
-    animal.x = constrainedZ.x;
-    animal.z = constrainedZ.z;
-  } else if (canOccupy(state, animal, constrainedX.x, constrainedX.z)
-    && isAnimalClearOfPeers(state, animal, constrainedX.x, constrainedX.z)) {
-    animal.x = constrainedX.x;
-    animal.z = constrainedX.z;
-  } else {
-    // A deterministic side-step keeps the simulation recoverable at water
-    // edges instead of turning a terrain mismatch into a permanent stall.
-    const side = animal.x <= 0 ? -1 : 1;
-    const sideX = animal.x + side * speed * deltaSeconds;
-    const constrainedSide = constrainAnimalAgainstPens(state, animal, sideX, animal.z);
-    if (canOccupy(state, animal, constrainedSide.x, constrainedSide.z)
-      && isAnimalClearOfPeers(state, animal, constrainedSide.x, constrainedSide.z)) {
-      animal.x = constrainedSide.x;
-      animal.z = constrainedSide.z;
-    }
-    else animal.lastMoveX = 0, animal.lastMoveZ = 0;
+
+  const step = speed * deltaSeconds;
+  const nextX = animal.x + direction.x * step;
+  const nextZ = animal.z + direction.z * step;
+  if (tryMoveCandidate(state, animal, nextX, nextZ)
+    || tryMoveCandidate(state, animal, animal.x, nextZ)
+    || tryMoveCandidate(state, animal, nextX, animal.z)) {
+    clampWorld(animal);
+    return;
   }
+
+  const perpendicular = { x: -direction.z, z: direction.x };
+  const parity = Number(animal.id.match(/\d+$/)?.[0] ?? "0") % 2 === 0 ? 1 : -1;
+  const avoidanceCandidates = [parity, -parity];
+  for (const side of avoidanceCandidates) {
+    if (tryMoveCandidate(
+      state,
+      animal,
+      animal.x + perpendicular.x * step * side,
+      animal.z + perpendicular.z * step * side,
+    )) {
+      animal.lastMoveX = perpendicular.x * side;
+      animal.lastMoveZ = perpendicular.z * side;
+      clampWorld(animal);
+      return;
+    }
+  }
+
+  animal.lastMoveX = 0;
+  animal.lastMoveZ = 0;
   clampWorld(animal);
 }
 
@@ -544,8 +551,6 @@ function updateRouteDiscovery(state: P5SimulationState): P5Route | null {
       const requiredAnimalType = state.scenario.requiredRouteAnimalTypes[route];
       if (requiredAnimalType && animal.type !== requiredAnimalType) continue;
       state.discoveredRoutes[route] = true;
-      // Keep the actual animal as the event subject so stage rules can verify
-      // which kind of animal used the route.
       recordEvent(state, "routeDiscovered", animal.id, route);
       return route;
     }
@@ -743,6 +748,10 @@ function updatePrey(
       animal.phase = "captured";
       animal.captureHoldSeconds = 0;
       animal.insidePen = true;
+      animal.previousX = animal.x;
+      animal.previousZ = animal.z;
+      animal.lastMoveX = 0;
+      animal.lastMoveZ = 0;
       releasePenEntrance(state, animal);
       recordEvent(state, "animalCaptured", animal.id, "full-body-inside-pen");
       return animal.id;
@@ -952,6 +961,10 @@ function updatePredator(
       && predator.captureHoldSeconds >= P5_TUNING.captureHoldSeconds) {
       predator.lifeState = "captured";
       predator.phase = "disabled";
+      predator.previousX = predator.x;
+      predator.previousZ = predator.z;
+      predator.lastMoveX = 0;
+      predator.lastMoveZ = 0;
       recordEvent(state, "predatorCaptured", predator.id, "player-left-predator-pen");
     }
   } else {
@@ -1018,9 +1031,12 @@ export function stepP5Simulation(
     || !finite(player.x) || !finite(player.z) || !finite(player.speed)) return emptyResult;
 
   for (const animal of state.animals) {
-    if (animal.lifeState === "captured" || animal.lifeState === "disabled") continue;
     animal.previousX = animal.x;
     animal.previousZ = animal.z;
+    if (animal.lifeState === "captured" || animal.lifeState === "disabled") {
+      animal.lastMoveX = 0;
+      animal.lastMoveZ = 0;
+    }
   }
   state.elapsedSeconds += deltaSeconds;
   state.guidanceSignalSeconds = Math.max(0, state.guidanceSignalSeconds - deltaSeconds);
