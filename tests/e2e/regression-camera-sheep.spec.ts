@@ -49,31 +49,38 @@ test("held movement follows a newly rotated camera without requiring stick relea
   await pointer(page, ".joystick-zone", "pointermove", 201, moveForward);
   await page.waitForTimeout(220);
 
-  const beforeTurn = await page.evaluate(() => window.__OITATE_P1__.getState());
-
   await pointer(page, ".camera-zone", "pointerdown", 202, cameraOrigin);
   await pointer(page, ".camera-zone", "pointermove", 202, {
     x: cameraOrigin.x + 330,
     y: cameraOrigin.y,
   });
 
-  // Keep the movement pointer held. The movement basis must rotate together
-  // with the camera instead of waiting for a new movement gesture.
-  await page.waitForTimeout(140);
-  const afterTurn = await page.evaluate(() => window.__OITATE_P1__.getState());
+  // The regression is specifically about movement *after* the camera turn.
+  // Capture the position after the camera event so pre-turn movement does not
+  // contaminate the direction measurement. The movement pointer stays held.
+  const afterCameraInput = await page.evaluate(() => window.__OITATE_P1__.getState());
+  expect(Math.abs(afterCameraInput.cameraYaw)).toBeGreaterThan(1.2);
 
-  const dx = afterTurn.player.x - beforeTurn.player.x;
-  const dz = afterTurn.player.z - beforeTurn.player.z;
+  await expect.poll(async () => {
+    const state = await page.evaluate(() => window.__OITATE_P1__.getState());
+    return Math.hypot(
+      state.player.x - afterCameraInput.player.x,
+      state.player.z - afterCameraInput.player.z,
+    );
+  }, { timeout: 2_000 }).toBeGreaterThan(0.12);
+
+  const afterTurn = await page.evaluate(() => window.__OITATE_P1__.getState());
+  const dx = afterTurn.player.x - afterCameraInput.player.x;
+  const dz = afterTurn.player.z - afterCameraInput.player.z;
   const displacement = Math.hypot(dx, dz);
-  const expectedX = Math.sin(afterTurn.cameraYaw);
-  const expectedZ = -Math.cos(afterTurn.cameraYaw);
+  const expectedX = Math.sin(afterCameraInput.cameraYaw);
+  const expectedZ = -Math.cos(afterCameraInput.cameraYaw);
   const alignment = displacement > 0
     ? (dx / displacement) * expectedX + (dz / displacement) * expectedZ
     : 0;
 
-  expect(Math.abs(afterTurn.cameraYaw)).toBeGreaterThan(1.2);
-  expect(displacement).toBeGreaterThan(0.1);
-  expect(alignment).toBeGreaterThan(0.8);
+  expect(displacement).toBeGreaterThan(0.12);
+  expect(alignment).toBeGreaterThan(0.95);
 
   await pointer(page, ".camera-zone", "pointerup", 202, {
     x: cameraOrigin.x + 330,
