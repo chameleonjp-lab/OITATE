@@ -15,22 +15,28 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
-    launchOptions: localChromium
-      ? {
-          executablePath: localChromium,
-          args: [
-            "--no-sandbox",
-            "--use-gl=angle",
-            "--use-angle=swiftshader",
-            "--enable-unsafe-swiftshader",
-          ],
-        }
-      : undefined,
   },
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        launchOptions: localChromium
+          ? {
+              executablePath: localChromium,
+              args: [
+                "--no-sandbox",
+                "--use-gl=angle",
+                "--use-angle=swiftshader",
+                "--enable-unsafe-swiftshader",
+              ],
+            }
+          : undefined,
+      },
+    },
+    {
+      name: "webkit",
+      use: { ...devices["iPhone 15 Pro"] },
     },
   ],
   webServer: {

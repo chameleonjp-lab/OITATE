@@ -6,9 +6,30 @@
     <meta name="theme-color" content="#08141a" />
     <meta name="description" content="立ち位置と合図で、性質の異なる動物の群れを囲いへ導く3Dアクションパズル。" />
     <title>OITATE｜動物誘導アクションパズル</title>
+    <style>
+      .boot-status{position:fixed;inset:0;display:grid;place-items:center;background:#081719;color:#f7f5e9;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;text-align:center;padding:24px}
+      .boot-status p{margin:0;line-height:1.7}.boot-status small{display:block;margin-top:8px;color:#b7d7cf}
+    </style>
+    <script>
+      window.addEventListener("error", function () {
+        var app = document.getElementById("app");
+        if (app && app.querySelector("[data-boot-status]")) {
+          app.innerHTML = '<div class="boot-status" role="alert"><p>ゲームの読み込みに失敗しました。<small>ページを再読み込みしても直らない場合は、この表示をそのままお知らせください。</small></p></div>';
+        }
+      });
+      window.addEventListener("unhandledrejection", function () {
+        var app = document.getElementById("app");
+        if (app && app.querySelector("[data-boot-status]")) {
+          app.innerHTML = '<div class="boot-status" role="alert"><p>ゲームの初期化に失敗しました。<small>ページを再読み込みしても直らない場合は、この表示をそのままお知らせください。</small></p></div>';
+        }
+      });
+    </script>
   </head>
   <body>
-    <div id="app" aria-label="OITATE 動物誘導アクションパズル"></div>
+    <div id="app" aria-label="OITATE 動物誘導アクションパズル">
+      <div class="boot-status" data-boot-status><p>OITATEを読み込んでいます…</p></div>
+    </div>
+    <noscript><div class="boot-status"><p>JavaScriptを有効にしてください。</p></div></noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

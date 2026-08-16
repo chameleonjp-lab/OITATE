@@ -9,6 +9,11 @@ test("keeps the P8 diagnostic export development-only and serializable", async (
   await expect(page.getByTestId("p8-diagnostic-tools")).toBeVisible();
   await expect(page.getByRole("button", { name: "診断JSONを保存" })).toBeVisible();
 
+  await expect.poll(
+    () => page.evaluate(() => window.__OITATE_P8__?.getReport().performance.sampleCount ?? 0),
+    { timeout: 5_000 },
+  ).toBeGreaterThan(0);
+
   const report = await page.evaluate(() => window.__OITATE_P8__?.getReport());
   expect(report?.schemaVersion).toBe(1);
   expect(report?.mode).toBe("p7");
